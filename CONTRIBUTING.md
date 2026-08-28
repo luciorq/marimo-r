@@ -1,5 +1,16 @@
 # Contributing Guide
 
+> **This is a fork.** Most of this guide is upstream marimo's and applies
+> unchanged, but two things differ here, and the Setup section below reflects
+> them:
+>
+> - **pixi is the supported development environment**, not an unsupported
+>   alternative. It pins Python, Node, **and R** in one lockfile.
+> - **The maintainer-approval and CLA steps below are upstream's process.**
+>   They apply to pull requests against `marimo-team/marimo`, not to this fork.
+>
+> See [FORK.md](FORK.md) for what this fork changes and how it tracks upstream.
+
 We welcome contributions. _You don't need to be an expert
 in frontend or Python development to help out._
 
@@ -82,21 +93,36 @@ _Note: We recommend that Windows developers use [WSL](https://learn.microsoft.co
 
 ### Prerequisites
 
-- [uv](https://docs.astral.sh/uv/getting-started/installation/) (Python package manager)
-- [Node.js](https://nodejs.org/) 22+
-- [pnpm](https://pnpm.io/installation) 10+
+- [pixi](https://pixi.sh/latest/#installation)
+
+That is the whole list. pixi provides Python, Node, pnpm, uv, and — for R work — R and its packages, all pinned in `pixi.lock`.
 
 ### Getting started
 
 ```bash
-make fe && make py
-make dev
+pixi install                      # Python and Node dev tooling
+pixi run make fe && pixi run make py
+pixi run make dev
 ```
 
 This will build the frontend, install Python dependencies in editable mode, and launch the dev server (backend on port 2718, frontend on port 3000).
 
+**Prefix commands with `pixi run`.** Every command in this guide — `make`, `uv run`, `pnpm` — assumes the pinned toolchain. A bare `make check` picks up whatever happens to be on your `PATH` and can pass or fail for reasons unrelated to your change.
+
+### Working on R support
+
+R lives in a separate pixi environment that carries no Python, so you only pay for it if you need it:
+
+```bash
+pixi install -e r                 # R, jsonlite, arrow, duckdb, ggplot2, and the R language servers
+pixi run test_r                   # tests/_r against the pinned R
+pixi run -e r r-repl              # an R REPL in the pinned library
+```
+
+marimo finds that R automatically and isolates it from your global R library — see [docs/development/r_support.md](docs/development/r_support.md), which is the full map of R support and the guide to rebasing it onto upstream.
+
 > [!TIP]
-> On the marimo team we use `uv` + `node`/`pnpm` directly. Alternatively, [pixi](https://github.com/prefix-dev/pixi) can manage the Python and Node toolchains for you (`pixi shell` then proceed as above), and [Gitpod](https://gitpod.io/#https://github.com/marimo-team/marimo) provides a cloud-based dev environment — but we don't officially support either of these and recommend the setup above.
+> To use a different R, set `MARIMO_R_BINARY=/path/to/R`, or `MARIMO_R_USE_PIXI=0` to fall back to whatever is on your `PATH`.
 
 ### `pre-commit` hooks
 

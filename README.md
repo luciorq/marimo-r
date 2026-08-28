@@ -1,3 +1,19 @@
+> **This is a fork of [marimo](https://github.com/marimo-team/marimo).**
+>
+> It adds two things to upstream marimo:
+>
+> 1. **R language support** — R cells, the `marimo.r(...)` API, and an R language
+>    server, so R and Python cells share one reactive notebook. This is the
+>    reason the fork exists.
+> 2. **[pixi](https://pixi.sh) for development environments** — one lockfile
+>    pins Python, Node, and the R toolchain together, so `pixi install` gets you
+>    a working checkout and CI runs the same versions you do.
+>
+> Everything else is upstream marimo, rebased onto upstream releases. Upstream is
+> not interested in R support, so this is maintained separately; see
+> [FORK.md](FORK.md). Bug reports for anything other than R or pixi belong
+> upstream.
+
 <p align="center">
   <img src="https://raw.githubusercontent.com/marimo-team/marimo/main/docs/_static/marimo-logotype-thick.svg">
 </p>
