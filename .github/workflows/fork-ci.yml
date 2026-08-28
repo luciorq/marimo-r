@@ -1,0 +1,272 @@
+name: 🧪 Fork CI
+
+# The only test workflow this fork runs. Upstream's test workflows are disabled
+# at the repository level (see scripts/fork/disable-upstream-workflows.sh):
+# their macOS and Windows matrices are far more CI spend than a private fork
+# needs. This one checks that the R patch series still works after a rebase,
+# on Linux only.
+#
+# Everything is behind the `FORK_CI` repository variable:
+#
+#   off      nothing runs
+#   smoke    (default, also when unset) Python + frontend checks, no R installed
+#   full     adds the pixi R environment and the R integration tests
+#   package  builds the marimo-r conda package (does not publish it)
+#   publish  builds it and uploads to the private `universe` channel at
+#            prefix.dev. Requires the PREFIX_API_KEY secret.
+#
+#   gh variable set FORK_CI --body off --repo luciorq/marimo-r
+#
+# workflow_dispatch takes a `level` input that overrides the variable for one
+# run, which is how you get a `full` run without flipping the repo default.
+# See FORK.md → "GitHub Actions".
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      level:
+        description: CI level for this run
+        type: choice
+        options: [smoke, full, package, publish, "off"]
+        default: smoke
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  python:
+    name: Python smoke (no R)
+    # Runs at every level except "off".
+    if: ${{ (inputs.level || vars.FORK_CI || 'smoke') != 'off' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      # The R integration tests error rather than skip when R is missing, and
+      # this job deliberately does not install the R environment.
+      MARIMO_R_SKIP_TESTS: "1"
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      # pixi provides python and uv, matching what `make check` uses locally.
+      - name: 📦 Setup pixi
+        uses: prefix-dev/setup-pixi@f00437f565399d418b0acc85936d12c1fb668347 # v0.10.1
+        with:
+          environments: default
+          cache: true
+
+      - name: Stub built assets
+        run: scripts/fork/stub-built-assets.sh
+
+      - name: Import smoke test
+        run: pixi run uv run --group test python -c "import marimo; assert callable(marimo.r); print(marimo.__version__)"
+
+      - name: Test R support and the code it touches
+        run: |
+          pixi run uv run --group test pytest -q \
+            tests/_r \
+            tests/_server/test_lsp.py \
+            tests/_utils/test_formatter.py \
+            tests/_runtime/test_interrupt_handlers.py
+
+      # Upstream's completeness tests. These matter to a fork more than to
+      # upstream: they assert that every command is tiered, routed, and shaped
+      # correctly, so a fork command that upstream's new machinery does not know
+      # about fails here rather than at runtime. `ResetRSessionCommand` reached
+      # users unclassified because CI ran none of these. They cost under a
+      # second.
+      - name: Test that fork additions are registered everywhere upstream expects
+        run: |
+          pixi run uv run --group test pytest -q \
+            tests/_session/test_capabilities.py \
+            tests/_runtime/test_request_router.py \
+            tests/_utils/test_msgspec_basestruct.py
+
+  frontend:
+    name: Frontend typecheck + R tests
+    if: ${{ (inputs.level || vars.FORK_CI || 'smoke') != 'off' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      # The `node` pixi environment, like `r`, is declared no-default-feature:
+      # node and pnpm, no python, uv, or editable marimo install. Using it here
+      # rather than upstream's setup-node action is what keeps CI on the same
+      # node a developer gets from `pixi run make fe-check` — upstream's action
+      # pins node 24 while pixi.lock resolves 26, so the two were typechecking
+      # against different majors.
+      - name: 📦 Setup pixi
+        uses: prefix-dev/setup-pixi@f00437f565399d418b0acc85936d12c1fb668347 # v0.10.1
+        with:
+          environments: node
+          cache: true
+
+      # Asked for rather than hardcoded: pnpm's store lives at a version-specific
+      # path (~/.local/share/pnpm/store/v11 today), so a literal path silently
+      # stops matching when the store format changes.
+      - name: Resolve the pnpm store path
+        id: pnpm-store
+        run: echo "path=$(pixi run -e node pnpm store path | tail -1)" >> "$GITHUB_OUTPUT"
+
+      # setup-pixi caches the toolchain but not node_modules; without this the
+      # pnpm store is re-fetched every run, which is what actions/setup-node's
+      # `cache: pnpm` was doing before.
+      - name: Cache the pnpm store
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: pnpm-store-${{ runner.os }}-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: pnpm-store-${{ runner.os }}-
+
+      - name: 📥 Install dependencies
+        run: pixi run -e node pnpm install --ignore-scripts --frozen-lockfile
+
+      # The most valuable check after a rebase: user-config-form.tsx and
+      # notebook-lsp.ts drift silently into type errors without ever producing a
+      # git conflict. See docs/development/r_support.md → conflict hotspots.
+      #
+      # Must go through turbo, not `pnpm typecheck` in frontend/: turbo's
+      # typecheck task dependsOn codegen, and the generated API and llm-info
+      # sources do not exist in a clean checkout. This is what `make fe-typecheck`
+      # runs.
+      - name: Typecheck
+        run: pixi run -e node pnpm turbo --filter @marimo-team/frontend typecheck
+
+      - name: Test R language mode and LSP client
+        working-directory: ./frontend
+        run: |
+          pixi run -e node pnpm test --run \
+            src/core/codemirror/language/__tests__/r.test.ts \
+            src/core/codemirror/lsp/__tests__/notebook-lsp.test.ts
+
+  r-integration:
+    name: R integration (pixi R)
+    # Opt-in: costs installing the R toolchain on top of the smoke jobs.
+    if: ${{ (inputs.level || vars.FORK_CI || 'smoke') == 'full' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      # R, jsonlite, arrow, DBI, duckdb, and ggplot2 all come from pixi.lock, so
+      # CI runs the same pinned R toolchain as a developer's machine. The `r`
+      # environment carries no python; marimo finds its R binary through
+      # marimo/_r/launcher.py, which is exactly the discovery path users hit.
+      - name: 📦 Setup pixi
+        uses: prefix-dev/setup-pixi@f00437f565399d418b0acc85936d12c1fb668347 # v0.10.1
+        with:
+          environments: default r
+          cache: true
+
+      - name: Report the R that marimo resolved
+        run: |
+          pixi run -e r r-version
+          pixi run python -c "
+          from marimo._r.launcher import resolve_r_invocation
+          i = resolve_r_invocation()
+          print(f'binary={i.binary}\nsource={i.source}\nlibrary={i.library}')
+          assert i.source == 'pixi', f'expected the pixi R, got {i.source}'
+          assert i.isolated, 'R library path is not isolated'
+          "
+
+      - name: Stub built assets
+        run: scripts/fork/stub-built-assets.sh
+
+      # test-optional, not test: the R encoding tests convert between R output
+      # and pandas/polars/pyarrow, and importorskip means they quietly skip
+      # rather than fail when those are absent. With only the `test` group, 8 of
+      # them disappear — which is most of the Python side of R data interop.
+      - name: Test R execution end to end
+        run: pixi run uv run --group test-optional pytest -q tests/_r
+
+  package:
+    name: Build the conda package
+    # Opt-in only, and never on push: this builds the frontend and then a conda
+    # package, which is far more work than the test jobs. At `package` it only
+    # builds; uploading needs the explicit `publish` level.
+    if: ${{ contains(fromJSON('["package","publish"]'), inputs.level || vars.FORK_CI || 'smoke') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: 📦 Setup pixi
+        uses: prefix-dev/setup-pixi@f00437f565399d418b0acc85936d12c1fb668347 # v0.10.1
+        with:
+          environments: default
+          cache: true
+
+      # recipe/recipe.yaml pins the version in `context`, because reading it
+      # from pyproject.toml needs rattler-build's --experimental load_from_file
+      # and the packaging path already depends on two preview features.
+      - name: Check the recipe version matches pyproject
+        run: |
+          pixi run python - <<'PY'
+          import re, tomllib, sys
+          pyproject = tomllib.load(open("pyproject.toml", "rb"))
+          project = pyproject["project"]["version"]
+          package = pyproject["tool"]["pixi"]["package"]["version"]
+          recipe = re.search(
+              r'^\s*version:\s*"([^"]+)"', open("recipe/recipe.yaml").read(), re.M
+          ).group(1)
+          if not project == package == recipe:
+              sys.exit(
+                  f"version drift: pyproject [project] {project}, "
+                  f"[tool.pixi.package] {package}, recipe {recipe}"
+              )
+          print(f"version {project} consistent across all three")
+          PY
+
+      # Builds the frontend, the wheel, then the conda package.
+      - name: Build
+        run: pixi run package
+
+      - name: Show what was produced
+        run: |
+          ls -la build/conda/*/*.conda
+          pixi run uv run --group test python - <<'PY'
+          import glob, io, json, tarfile, zipfile, zstandard
+          path = glob.glob("build/conda/*/*.conda")[0]
+          z = zipfile.ZipFile(path)
+          member = next(n for n in z.namelist() if n.startswith("info-"))
+          raw = zstandard.ZstdDecompressor().stream_reader(io.BytesIO(z.read(member)))
+          info = json.load(
+              tarfile.open(fileobj=io.BytesIO(raw.read()), mode="r:").extractfile(
+                  "info/index.json"
+              )
+          )
+          print("package  :", info["name"], info["version"], info["subdir"])
+          print("repodata :", info["repodata_revision"], "(3 = v3)")
+          print("constrains:", info["constrains"])
+          print("extras   :", sorted(info["extra_depends"]))
+          assert info["repodata_revision"] == 3, "not a v3 package"
+          assert info["extra_depends"], "extras missing from the artifact"
+          PY
+
+      - name: Upload the package as a workflow artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: marimo-r-conda-${{ github.sha }}
+          path: build/conda/*/*.conda
+          if-no-files-found: error
+
+      # Publishing is irreversible for a given version + build number, so it
+      # needs the explicit `publish` level — never a push, never `package`.
+      - name: Publish to prefix.dev/universe
+        if: ${{ (inputs.level || vars.FORK_CI) == 'publish' }}
+        env:
+          PREFIX_API_KEY: ${{ secrets.PREFIX_API_KEY }}
+        run: |
+          if [ -z "${PREFIX_API_KEY:-}" ]; then
+            echo "::error::level=publish but the PREFIX_API_KEY secret is not set."
+            echo "Add it with: gh secret set PREFIX_API_KEY --repo luciorq/marimo-r"
+            exit 1
+          fi
+          pixi run publish
