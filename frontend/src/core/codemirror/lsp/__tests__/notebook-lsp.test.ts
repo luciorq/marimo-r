@@ -1,10 +1,12 @@
+
+
 /* Copyright 2026 Marimo. All rights reserved. */
 import { EditorView } from "@codemirror/view";
 import {
   type LanguageServerClient,
   languageServerWithClient,
 } from "@marimo-team/codemirror-languageserver";
-import { beforeEach, describe, expect, it, type Mocked, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, type Mocked, vi } from "vitest";
 import * as LSP from "vscode-languageserver-protocol";
 import { cellId } from "@/__tests__/branded";
 import type { CellId } from "@/core/cells/ids";
@@ -13,6 +15,7 @@ import { topologicalCodesAtom } from "../../copilot/getCodes";
 import { lspWorkspaceAtom } from "@/core/saving/file-state";
 import { languageAdapterState } from "../../language/extension";
 import { PythonLanguageAdapter } from "../../language/languages/python";
+import { RLanguageAdapter } from "../../language/languages/r";
 import { languageMetadataField } from "../../language/metadata";
 import { createNotebookLens } from "../lens";
 import { NotebookLanguageServerClient } from "../notebook-lsp";
@@ -334,11 +337,16 @@ describe("NotebookLanguageServerClient", () => {
       return undefined;
     });
 
-    notebookClient = new NotebookLanguageServerClient(mockClient, {}, () => ({
-      [Cells.cell1]: new EditorView({ doc: "# this is a comment" }),
-      [Cells.cell2]: new EditorView({ doc: "import math\nimport numpy" }),
-      [Cells.cell3]: new EditorView({ doc: "print(math.sqrt(4))" }),
-    }));
+    notebookClient = new NotebookLanguageServerClient(
+      mockClient,
+      {},
+      () => ({
+        [Cells.cell1]: new EditorView({ doc: "# this is a comment" }),
+        [Cells.cell2]: new EditorView({ doc: "import math\nimport numpy" }),
+        [Cells.cell3]: new EditorView({ doc: "print(math.sqrt(4))" }),
+      }),
+      "python",
+    );
   });
 
   describe("document lifecycle", () => {
@@ -753,6 +761,129 @@ describe("NotebookLanguageServerClient", () => {
 
       const result = await notebookClient.textDocumentHover(hoverParams);
       expect(result).toBeNull();
+    });
+
+    it("should wrap plaintext hover content in a code fence", async () => {
+      const hoverParams: LSP.HoverParams = {
+        textDocument: { uri: "file:///cell1.py" },
+        position: { line: 0, character: 0 },
+      };
+
+      const mockHoverResponse: LSP.Hover = {
+        contents: {
+          kind: "plaintext",
+          value: "mean(x, ...)\n\nArithmetic Mean\n\n  x: numeric vector",
+        },
+      };
+
+      mockClient.textDocumentHover.mockResolvedValue(mockHoverResponse);
+
+      await notebookClient.textDocumentDidOpen({
+        textDocument: {
+          uri: "file:///cell1.py",
+          languageId: "python",
+          version: 1,
+          text: "test",
+        },
+      });
+
+      const result = await notebookClient.textDocumentHover(hoverParams);
+      const contents = result?.contents as LSP.MarkupContent;
+
+      expect(contents.kind).toBe("markdown");
+      expect(contents.value).toBe(
+        "```\nmean(x, ...)\n\nArithmetic Mean\n\n  x: numeric vector\n```",
+      );
+    });
+
+    it("should join MarkedString array into a single markdown document", async () => {
+      const hoverParams: LSP.HoverParams = {
+        textDocument: { uri: "file:///cell1.py" },
+        position: { line: 0, character: 0 },
+      };
+
+      // R languageserver returns an array of strings
+      const mockHoverResponse: LSP.Hover = {
+        contents: [
+          "```r\nmean(x, ...)\n```",
+          "**Arithmetic Mean**\n\nGeneric function for the arithmetic mean.",
+        ],
+      };
+
+      mockClient.textDocumentHover.mockResolvedValue(mockHoverResponse);
+
+      await notebookClient.textDocumentDidOpen({
+        textDocument: {
+          uri: "file:///cell1.py",
+          languageId: "python",
+          version: 1,
+          text: "test",
+        },
+      });
+
+      const result = await notebookClient.textDocumentHover(hoverParams);
+      const contents = result?.contents as LSP.MarkupContent;
+
+      expect(contents.kind).toBe("markdown");
+      expect(contents.value).toBe(
+        "```r\nmean(x, ...)\n```\n\n**Arithmetic Mean**\n\nGeneric function for the arithmetic mean.",
+      );
+    });
+
+    it("should handle MarkedString array with language objects", async () => {
+      const hoverParams: LSP.HoverParams = {
+        textDocument: { uri: "file:///cell1.py" },
+        position: { line: 0, character: 0 },
+      };
+
+      const mockHoverResponse: LSP.Hover = {
+        contents: [{ language: "r", value: "mean(x, ...)" }, "Arithmetic Mean"],
+      };
+
+      mockClient.textDocumentHover.mockResolvedValue(mockHoverResponse);
+
+      await notebookClient.textDocumentDidOpen({
+        textDocument: {
+          uri: "file:///cell1.py",
+          languageId: "python",
+          version: 1,
+          text: "test",
+        },
+      });
+
+      const result = await notebookClient.textDocumentHover(hoverParams);
+      const contents = result?.contents as LSP.MarkupContent;
+
+      expect(contents.kind).toBe("markdown");
+      expect(contents.value).toBe("```r\nmean(x, ...)\n```\n\nArithmetic Mean");
+    });
+
+    it("should convert plain string hover to markdown MarkupContent", async () => {
+      const hoverParams: LSP.HoverParams = {
+        textDocument: { uri: "file:///cell1.py" },
+        position: { line: 0, character: 0 },
+      };
+
+      const mockHoverResponse: LSP.Hover = {
+        contents: "**bold** and `code`",
+      };
+
+      mockClient.textDocumentHover.mockResolvedValue(mockHoverResponse);
+
+      await notebookClient.textDocumentDidOpen({
+        textDocument: {
+          uri: "file:///cell1.py",
+          languageId: "python",
+          version: 1,
+          text: "test",
+        },
+      });
+
+      const result = await notebookClient.textDocumentHover(hoverParams);
+      const contents = result?.contents as LSP.MarkupContent;
+
+      expect(contents.kind).toBe("markdown");
+      expect(contents.value).toBe("**bold** and `code`");
     });
   });
 
@@ -1896,7 +2027,12 @@ describe("NotebookLanguageServerClient", () => {
       });
 
       // Create a new client to trigger initialization
-      const client = new NotebookLanguageServerClient(mockClient, {});
+      const client = new NotebookLanguageServerClient(
+        mockClient,
+        {},
+        undefined,
+        "python",
+      );
       await client.initialize();
 
       expect(configNotifications[0]).toMatchInlineSnapshot(`
@@ -1907,6 +2043,425 @@ describe("NotebookLanguageServerClient", () => {
           },
         }
       `);
+    });
+  });
+
+  describe("R language mode", () => {
+    let rMockClient: Mocked<ILanguageServerClient>;
+    let rNotebookClient: NotebookLanguageServerClient;
+    let rView1: EditorView;
+    let rView2: EditorView;
+    let pyView3: EditorView;
+
+    beforeEach(() => {
+      rMockClient = {
+        ready: true,
+        capabilities: {},
+        initializePromise: Promise.resolve(),
+        clientCapabilities: {},
+        hasCapability: vi.fn().mockReturnValue(false),
+        completionItemResolve: vi.fn(),
+        codeActionResolve: vi.fn(),
+        initialize: vi.fn(),
+        close: vi.fn(),
+        onNotification: vi.fn(),
+        textDocumentDidOpen: vi.fn(),
+        textDocumentDidChange: vi.fn(),
+        textDocumentDidClose: vi.fn(),
+        textDocumentWillSave: vi.fn(),
+        textDocumentWillSaveWaitUntil: vi.fn(),
+        textDocumentDidSave: vi.fn(),
+        textDocumentHover: vi.fn(),
+        textDocumentCompletion: vi.fn(),
+        textDocumentDefinition: vi.fn(),
+        textDocumentPrepareRename: vi.fn(),
+        textDocumentCodeAction: vi.fn(),
+        textDocumentSignatureHelp: vi.fn(),
+        textDocumentRename: vi.fn(),
+      };
+      (rMockClient as any).processNotification = vi.fn();
+      (rMockClient as any).notify = vi.fn();
+
+      // R cells have raw R code in their editors
+      rView1 = new EditorView({
+        doc: "library(ggplot2)",
+        extensions: [
+          languageAdapterState.init(() => new RLanguageAdapter()),
+          languageMetadataField.init(() => ({
+            prefix: "",
+            suffix: "",
+            outputVar: "_r_output",
+            showOutput: true,
+            capture: true,
+            plot: true,
+          })),
+        ],
+      });
+
+      rView2 = new EditorView({
+        doc: "x <- c(1, 2, 3)\nmean(x)",
+        extensions: [
+          languageAdapterState.init(() => new RLanguageAdapter()),
+          languageMetadataField.init(() => ({
+            prefix: "",
+            suffix: "",
+            outputVar: "_r_output",
+            showOutput: true,
+            capture: true,
+            plot: true,
+          })),
+        ],
+      });
+
+      // A Python cell that should be excluded from R LSP
+      pyView3 = new EditorView({
+        doc: "import math",
+        extensions: [
+          languageAdapterState.init(() => new PythonLanguageAdapter()),
+          languageMetadataField.init(() => ({})),
+        ],
+      });
+
+      rNotebookClient = new NotebookLanguageServerClient(
+        rMockClient,
+        {},
+        () => ({
+          [Cells.cell1]: rView1,
+          [Cells.cell2]: rView2,
+          [Cells.cell3]: pyView3,
+        }),
+        "r",
+      );
+
+      // topologicalCodesAtom returns Python-wrapped code for R cells
+      vi.spyOn(store, "get").mockImplementation((atom) => {
+        if (atom === topologicalCodesAtom) {
+          return {
+            cellIds: [Cells.cell1, Cells.cell2, Cells.cell3],
+            codes: {
+              [Cells.cell1]: '_r_output = mo.r("""library(ggplot2)""")',
+              [Cells.cell2]: '_r_output = mo.r("""x <- c(1, 2, 3)\nmean(x)""")',
+              [Cells.cell3]: "import math",
+            },
+          };
+        }
+        return undefined;
+      });
+    });
+
+    afterEach(async () => {
+      // The R sync path calls replaceEditorContent, which dispatches CodeMirror
+      // transactions that in turn schedule React work. Anything still queued
+      // when jsdom is torn down surfaces as an unhandled "window is not
+      // defined" error and fails the file even though every test passed.
+      //
+      // Order matters: destroy first so the plugins unmount, *then* drain, or
+      // the work that unmounting itself queues is never flushed. React's
+      // scheduler also yields between units and reschedules onto a later
+      // macrotask, so one tick is not reliably enough — drain until it stops
+      // producing work rather than a fixed number of times.
+      rView1.destroy();
+      rView2.destroy();
+      pyView3.destroy();
+
+      for (let i = 0; i < 5; i++) {
+        await new Promise((resolve) => setImmediate(resolve));
+      }
+    });
+
+    it("should use raw R code (not Python-wrapped) in getNotebookCode", async () => {
+      // Trigger sync to exercise getNotebookCode
+      rMockClient.textDocumentDidChange = vi
+        .fn()
+        .mockImplementation((params) => params);
+
+      const { lens } = await rNotebookClient.sync();
+
+      // The merged text should be raw R code, not Python-wrapped
+      expect(lens.mergedText).not.toContain("mo.r(");
+      expect(lens.mergedText).not.toContain('"""');
+      expect(lens.mergedText).toContain("library(ggplot2)");
+      expect(lens.mergedText).toContain("x <- c(1, 2, 3)");
+      expect(lens.mergedText).toContain("mean(x)");
+    });
+
+    it("should only include R cells in the notebook code", async () => {
+      rMockClient.textDocumentDidChange = vi
+        .fn()
+        .mockImplementation((params) => params);
+
+      const { lens } = await rNotebookClient.sync();
+
+      // Should only contain R cells (cell1, cell2), not Python cell3
+      expect(lens.cellIds).toEqual([Cells.cell1, Cells.cell2]);
+      expect(lens.mergedText).not.toContain("import math");
+    });
+
+    it("should send raw R code to LSP on textDocumentDidOpen", async () => {
+      await rNotebookClient.textDocumentDidOpen({
+        textDocument: {
+          uri: CellDocumentUri.of(Cells.cell1),
+          languageId: "r",
+          version: 1,
+          text: "library(ggplot2)",
+        },
+      });
+
+      expect(rMockClient.textDocumentDidOpen).toHaveBeenCalledWith(
+        expect.objectContaining({
+          textDocument: expect.objectContaining({
+            languageId: "r",
+            text: "library(ggplot2)\nx <- c(1, 2, 3)\nmean(x)",
+            uri: "file:///project/__marimo_notebook__.r",
+          }),
+        }),
+      );
+    });
+
+    it("should skip textDocumentDidOpen for Python cells in R mode", async () => {
+      rMockClient.textDocumentDidOpen.mockClear();
+
+      await rNotebookClient.textDocumentDidOpen({
+        textDocument: {
+          uri: CellDocumentUri.of(Cells.cell3),
+          languageId: "r",
+          version: 1,
+          text: "import math",
+        },
+      });
+
+      // The client's textDocumentDidOpen should not be called for Python cells
+      expect(rMockClient.textDocumentDidOpen).not.toHaveBeenCalled();
+    });
+
+    it("should use raw text comparison and direct replacement for R rename", async () => {
+      const props = {
+        workspaceFolders: null,
+        capabilities: {
+          textDocument: { rename: { prepareSupport: true } },
+        },
+        languageId: "r",
+        transport: {
+          sendData: vi.fn(),
+          subscribe: vi.fn(),
+          connect: vi.fn(),
+          transportRequestManager: { send: vi.fn() },
+        } as any,
+      };
+
+      // Rebuild views with languageServerWithClient extension
+      rView1 = new EditorView({
+        doc: "x <- 10\nprint(x)",
+        extensions: [
+          languageAdapterState.init(() => new RLanguageAdapter()),
+          languageMetadataField.init(() => ({
+            prefix: "",
+            suffix: "",
+            outputVar: "_r_output",
+            showOutput: true,
+            capture: true,
+            plot: true,
+          })),
+          languageServerWithClient({
+            client: rMockClient as unknown as LanguageServerClient,
+            documentUri: CellDocumentUri.of(Cells.cell1),
+            ...props,
+          }),
+        ],
+      });
+
+      rView2 = new EditorView({
+        doc: "y <- x + 1",
+        extensions: [
+          languageAdapterState.init(() => new RLanguageAdapter()),
+          languageMetadataField.init(() => ({
+            prefix: "",
+            suffix: "",
+            outputVar: "_r_output",
+            showOutput: true,
+            capture: true,
+            plot: true,
+          })),
+          languageServerWithClient({
+            client: rMockClient as unknown as LanguageServerClient,
+            documentUri: CellDocumentUri.of(Cells.cell2),
+            ...props,
+          }),
+        ],
+      });
+
+      (rNotebookClient as any).getNotebookEditors = () => ({
+        [Cells.cell1]: rView1,
+        [Cells.cell2]: rView2,
+      });
+
+      vi.spyOn(store, "get").mockImplementation((atom) => {
+        if (atom === topologicalCodesAtom) {
+          return {
+            cellIds: [Cells.cell1, Cells.cell2],
+            codes: {
+              [Cells.cell1]: '_r_output = mo.r("""x <- 10\nprint(x)""")',
+              [Cells.cell2]: '_r_output = mo.r("""y <- x + 1""")',
+            },
+          };
+        }
+        return undefined;
+      });
+
+      // Open doc to set up the lens
+      await rNotebookClient.textDocumentDidOpen({
+        textDocument: {
+          uri: CellDocumentUri.of(Cells.cell1),
+          languageId: "r",
+          version: 1,
+          text: "x <- 10\nprint(x)",
+        },
+      });
+
+      // Mock rename response — LSP returns raw R with x renamed to z
+      rMockClient.textDocumentRename = vi.fn().mockResolvedValue({
+        documentChanges: [
+          {
+            textDocument: {
+              uri: "file:///project/__marimo_notebook__.r",
+              version: 1,
+            },
+            edits: [
+              {
+                range: {
+                  start: { line: 0, character: 0 },
+                  end: { line: 2, character: 10 },
+                },
+                newText: "z <- 10\nprint(z)\ny <- z + 1",
+              },
+            ],
+          },
+        ],
+      } as LSP.WorkspaceEdit);
+
+      const result = await rNotebookClient.textDocumentRename({
+        textDocument: { uri: CellDocumentUri.of(Cells.cell1) },
+        position: { line: 0, character: 0 },
+        newName: "z",
+      });
+
+      expect(result).toBeDefined();
+      expect(rView1.state.doc.toString()).toBe("z <- 10\nprint(z)");
+      expect(rView2.state.doc.toString()).toBe("y <- z + 1");
+    });
+
+    it("should not update R cells when rename content is unchanged", async () => {
+      const props = {
+        workspaceFolders: null,
+        capabilities: {
+          textDocument: { rename: { prepareSupport: true } },
+        },
+        languageId: "r",
+        transport: {
+          sendData: vi.fn(),
+          subscribe: vi.fn(),
+          connect: vi.fn(),
+          transportRequestManager: { send: vi.fn() },
+        } as any,
+      };
+
+      rView1 = new EditorView({
+        doc: "x <- 10",
+        extensions: [
+          languageAdapterState.init(() => new RLanguageAdapter()),
+          languageMetadataField.init(() => ({
+            prefix: "",
+            suffix: "",
+            outputVar: "_r_output",
+            showOutput: true,
+            capture: true,
+            plot: true,
+          })),
+          languageServerWithClient({
+            client: rMockClient as unknown as LanguageServerClient,
+            documentUri: CellDocumentUri.of(Cells.cell1),
+            ...props,
+          }),
+        ],
+      });
+
+      rView2 = new EditorView({
+        doc: "y <- 20",
+        extensions: [
+          languageAdapterState.init(() => new RLanguageAdapter()),
+          languageMetadataField.init(() => ({
+            prefix: "",
+            suffix: "",
+            outputVar: "_r_output",
+            showOutput: true,
+            capture: true,
+            plot: true,
+          })),
+          languageServerWithClient({
+            client: rMockClient as unknown as LanguageServerClient,
+            documentUri: CellDocumentUri.of(Cells.cell2),
+            ...props,
+          }),
+        ],
+      });
+
+      (rNotebookClient as any).getNotebookEditors = () => ({
+        [Cells.cell1]: rView1,
+        [Cells.cell2]: rView2,
+      });
+
+      vi.spyOn(store, "get").mockImplementation((atom) => {
+        if (atom === topologicalCodesAtom) {
+          return {
+            cellIds: [Cells.cell1, Cells.cell2],
+            codes: {
+              [Cells.cell1]: '_r_output = mo.r("""x <- 10""")',
+              [Cells.cell2]: '_r_output = mo.r("""y <- 20""")',
+            },
+          };
+        }
+        return undefined;
+      });
+
+      await rNotebookClient.textDocumentDidOpen({
+        textDocument: {
+          uri: CellDocumentUri.of(Cells.cell1),
+          languageId: "r",
+          version: 1,
+          text: "x <- 10",
+        },
+      });
+
+      // Rename only affects cell1, cell2 stays the same
+      rMockClient.textDocumentRename = vi.fn().mockResolvedValue({
+        documentChanges: [
+          {
+            textDocument: {
+              uri: "file:///project/__marimo_notebook__.r",
+              version: 1,
+            },
+            edits: [
+              {
+                range: {
+                  start: { line: 0, character: 0 },
+                  end: { line: 1, character: 7 },
+                },
+                newText: "z <- 10\ny <- 20",
+              },
+            ],
+          },
+        ],
+      } as LSP.WorkspaceEdit);
+
+      await rNotebookClient.textDocumentRename({
+        textDocument: { uri: CellDocumentUri.of(Cells.cell1) },
+        position: { line: 0, character: 0 },
+        newName: "z",
+      });
+
+      // cell1 should be renamed, cell2 should remain unchanged
+      expect(rView1.state.doc.toString()).toBe("z <- 10");
+      expect(rView2.state.doc.toString()).toBe("y <- 20");
     });
   });
 });

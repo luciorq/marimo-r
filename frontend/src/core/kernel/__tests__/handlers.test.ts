@@ -88,6 +88,7 @@ describe("buildCellData", () => {
       kiosk: false,
       capabilities: {
         terminal: false,
+        r_lsp: false,
       },
       auto_instantiated: false,
       consumer_capabilities: { edit: true, interact: true },
@@ -157,6 +158,7 @@ describe("buildCellData", () => {
       kiosk: false,
       capabilities: {
         terminal: false,
+        r_lsp: false,
       },
       auto_instantiated: false,
       consumer_capabilities: { edit: true, interact: true },
@@ -191,6 +193,7 @@ describe("buildCellData", () => {
       kiosk: false,
       capabilities: {
         terminal: false,
+        r_lsp: false,
       },
       auto_instantiated: false,
       consumer_capabilities: { edit: true, interact: true },
@@ -224,6 +227,7 @@ describe("buildLayoutState", () => {
       kiosk: false,
       capabilities: {
         terminal: false,
+        r_lsp: false,
       },
       auto_instantiated: false,
       consumer_capabilities: { edit: true, interact: true },
@@ -273,6 +277,7 @@ describe("buildLayoutState", () => {
       kiosk: false,
       capabilities: {
         terminal: false,
+        r_lsp: false,
       },
       auto_instantiated: false,
       consumer_capabilities: { edit: true, interact: true },

@@ -70,10 +70,14 @@ vi.mock("@codemirror/commands", () => ({
 // Mock @codemirror/autocomplete
 const mockCompletionStatus = vi.fn();
 const mockCloseCompletion = vi.fn();
-vi.mock("@codemirror/autocomplete", () => ({
-  completionStatus: (...args: unknown[]) => mockCompletionStatus(...args),
-  closeCompletion: (...args: unknown[]) => mockCloseCompletion(...args),
-}));
+vi.mock("@codemirror/autocomplete", async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...(actual as object),
+    completionStatus: (...args: unknown[]) => mockCompletionStatus(...args),
+    closeCompletion: (...args: unknown[]) => mockCloseCompletion(...args),
+  };
+});
 
 // Get mocked functions
 const mockUseCellActions = vi.mocked(

@@ -83,6 +83,12 @@ test("default UserConfig - empty", () => {
         "overrides": {},
         "preset": "default",
       },
+      "language_servers": {
+        "basedpyright": {},
+        "pylsp": {},
+        "r": {},
+        "ty": {},
+      },
       "mcp": {},
       "package_management": {
         "manager": "pip",
@@ -156,6 +162,12 @@ test("default UserConfig - one level", () => {
         "destructive_delete": true,
         "overrides": {},
         "preset": "default",
+      },
+      "language_servers": {
+        "basedpyright": {},
+        "pylsp": {},
+        "r": {},
+        "ty": {},
       },
       "mcp": {},
       "package_management": {

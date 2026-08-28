@@ -185,3 +185,104 @@ def test_ignore_console_ctrl_c_keeps_interrupt_main_working() -> None:
         [sys.executable, "-c", script], timeout=30, capture_output=True
     )
     assert completed.returncode == 0, completed.stderr.decode()
+
+
+# ===================================================================
+# R process interrupt tests
+# ===================================================================
+
+
+def test_r_process_sigint_sent_when_registered():
+    """Test that SIGINT is sent to the R subprocess when it is registered."""
+    mock_proc = MagicMock()
+    mock_proc.poll.return_value = None
+
+    exec_ctx = ExecutionContext(cell_id="cell_id", setting_element_value=False)
+
+    sched = MagicMock()
+    sched.has_active_tasks.return_value = False
+
+    with patch("marimo._runtime.handlers.safe_get_context") as mock_safe:
+        mock_ctx = MagicMock(spec=KernelRuntimeContext)
+        mock_ctx.execution_context = exec_ctx
+        mock_ctx.active_scheduler = sched
+        mock_safe.return_value = mock_ctx
+
+        with exec_ctx.with_r_process(mock_proc):
+            interrupt_handler = construct_interrupt_handler()
+
+            with pytest.raises(MarimoInterrupt):
+                interrupt_handler(signal.SIGINT, None)
+
+            mock_proc.send_signal.assert_called_once_with(signal.SIGINT)
+
+
+def test_r_process_no_error_when_none():
+    """Test that no error occurs when r_process is None."""
+    sched = MagicMock()
+    sched.has_active_tasks.return_value = False
+
+    exec_ctx = ExecutionContext(cell_id="cell_id", setting_element_value=False)
+
+    with patch("marimo._runtime.handlers.safe_get_context") as mock_safe:
+        mock_ctx = MagicMock(spec=KernelRuntimeContext)
+        mock_ctx.execution_context = exec_ctx
+        mock_ctx.active_scheduler = sched
+        mock_safe.return_value = mock_ctx
+
+        interrupt_handler = construct_interrupt_handler()
+
+        with pytest.raises(MarimoInterrupt):
+            interrupt_handler(signal.SIGINT, None)
+
+
+def test_r_process_not_signaled_when_already_exited():
+    """Test that no signal is sent when the R process has already exited."""
+    mock_proc = MagicMock()
+    mock_proc.poll.return_value = 0
+
+    sched = MagicMock()
+    sched.has_active_tasks.return_value = False
+
+    exec_ctx = ExecutionContext(cell_id="cell_id", setting_element_value=False)
+
+    with patch("marimo._runtime.handlers.safe_get_context") as mock_safe:
+        mock_ctx = MagicMock(spec=KernelRuntimeContext)
+        mock_ctx.execution_context = exec_ctx
+        mock_ctx.active_scheduler = sched
+        mock_safe.return_value = mock_ctx
+
+        with exec_ctx.with_r_process(mock_proc):
+            interrupt_handler = construct_interrupt_handler()
+
+            with pytest.raises(MarimoInterrupt):
+                interrupt_handler(signal.SIGINT, None)
+
+            mock_proc.send_signal.assert_not_called()
+            mock_proc.terminate.assert_not_called()
+
+
+def test_r_process_exception_during_signal_is_swallowed():
+    """Test that exceptions during signal sending don't crash the kernel."""
+    mock_proc = MagicMock()
+    mock_proc.poll.return_value = None
+    mock_proc.send_signal.side_effect = ProcessLookupError("No such process")
+
+    sched = MagicMock()
+    sched.has_active_tasks.return_value = False
+
+    exec_ctx = ExecutionContext(cell_id="cell_id", setting_element_value=False)
+
+    with patch("marimo._runtime.handlers.safe_get_context") as mock_safe:
+        mock_ctx = MagicMock(spec=KernelRuntimeContext)
+        mock_ctx.execution_context = exec_ctx
+        mock_ctx.active_scheduler = sched
+        mock_safe.return_value = mock_ctx
+
+        with exec_ctx.with_r_process(mock_proc):
+            interrupt_handler = construct_interrupt_handler()
+
+            with pytest.raises(MarimoInterrupt):
+                interrupt_handler(signal.SIGINT, None)
+
+            mock_proc.send_signal.assert_called_once()

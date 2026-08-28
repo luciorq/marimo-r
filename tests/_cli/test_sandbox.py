@@ -25,66 +25,79 @@ HAS_UV = DependencyManager.which("uv")
 
 @patch("marimo._cli.sandbox.is_editable", return_value=False)
 def test_normalize_marimo_dependencies(mock_is_editable: Any):
+    """This fork pins its own distribution, `marimo-r`.
+
+    A notebook written against upstream carries `marimo==...`; its sandbox must
+    install marimo-r instead, or it would lose R support and conflict with the
+    running package, since both own the `marimo` import name. Upstream version
+    specifiers are dropped rather than translated — they refer to upstream
+    releases, which do not exist for this distribution.
+    """
     # Test adding marimo when not present
     assert _normalize_sandbox_dependencies(
         ["numpy"], "1.0.0", additional_features=[]
     ) == [
         "numpy",
-        "marimo==1.0.0",
+        "marimo-r==1.0.0",
     ]
     assert mock_is_editable.call_count == 1
 
     # Test preferring bracketed version
     assert _normalize_sandbox_dependencies(
         ["marimo", "marimo[extras]", "numpy"], "1.0.0", additional_features=[]
-    ) == ["numpy", "marimo[extras]==1.0.0"]
+    ) == ["numpy", "marimo-r[extras]==1.0.0"]
 
-    # Test keeping existing version with brackets
+    # An upstream pin is retargeted and repinned to the running version.
     assert _normalize_sandbox_dependencies(
         ["marimo[extras]>=0.1.0", "numpy"], "1.0.0", additional_features=[]
-    ) == ["numpy", "marimo[extras]>=0.1.0"]
+    ) == ["numpy", "marimo-r[extras]==1.0.0"]
+
+    # A pin on *this* distribution is respected as written.
+    assert _normalize_sandbox_dependencies(
+        ["marimo-r[extras]>=0.1.0", "numpy"], "1.0.0", additional_features=[]
+    ) == ["numpy", "marimo-r[extras]>=0.1.0"]
 
     # Test adding version when none exists
     assert _normalize_sandbox_dependencies(
         ["marimo[extras]", "numpy"], "1.0.0", additional_features=[]
-    ) == ["numpy", "marimo[extras]==1.0.0"]
+    ) == ["numpy", "marimo-r[extras]==1.0.0"]
 
     # Test keeping only one marimo dependency
     assert _normalize_sandbox_dependencies(
         ["marimo>=0.1.0", "marimo[extras]>=0.2.0", "numpy"],
         "1.0.0",
         additional_features=[],
-    ) == ["numpy", "marimo[extras]>=0.2.0"]
+    ) == ["numpy", "marimo-r[extras]==1.0.0"]
     assert _normalize_sandbox_dependencies(
         ["marimo", "marimo[extras]>=0.2.0", "numpy"],
         "1.0.0",
         additional_features=[],
-    ) == ["numpy", "marimo[extras]>=0.2.0"]
+    ) == ["numpy", "marimo-r[extras]==1.0.0"]
 
     # With additional features
     assert _normalize_sandbox_dependencies(
         ["marimo[extras]", "numpy"], "1.0.0", additional_features=["lsp"]
-    ) == ["numpy", "marimo[lsp,extras]==1.0.0"]
+    ) == ["numpy", "marimo-r[lsp,extras]==1.0.0"]
 
     # With multiple additional features
     assert _normalize_sandbox_dependencies(
         ["marimo[extras]", "numpy"],
         "1.0.0",
         additional_features=["lsp", "recommended"],
-    ) == ["numpy", "marimo[lsp,recommended,extras]==1.0.0"]
+    ) == ["numpy", "marimo-r[lsp,recommended,extras]==1.0.0"]
 
     # With additional features when not present
     assert _normalize_sandbox_dependencies(
         ["marimo", "numpy"], "1.0.0", additional_features=["lsp"]
-    ) == ["numpy", "marimo[lsp]==1.0.0"]
+    ) == ["numpy", "marimo-r[lsp]==1.0.0"]
 
     # With duplicate additional features
     # This is ok although it's a bit redundant
     assert _normalize_sandbox_dependencies(
         ["marimo[lsp]", "numpy"], "1.0.0", additional_features=["lsp"]
-    ) == ["numpy", "marimo[lsp,lsp]==1.0.0"]
+    ) == ["numpy", "marimo-r[lsp,lsp]==1.0.0"]
 
-    # Test various version specifiers are preserved
+    # Version specifiers on *this* distribution are preserved verbatim.
     version_specs = [
         "==0.1.0",
         ">=0.1.0",
@@ -95,8 +108,8 @@ def test_normalize_marimo_dependencies(mock_is_editable: Any):
     ]
     for spec in version_specs:
         assert _normalize_sandbox_dependencies(
-            [f"marimo{spec}", "numpy"], "1.0.0", additional_features=[]
-        ) == ["numpy", f"marimo{spec}"]
+            [f"marimo-r{spec}", "numpy"], "1.0.0", additional_features=[]
+        ) == ["numpy", f"marimo-r{spec}"]
 
 
 def test_normalize_marimo_dependencies_editable():
