@@ -383,9 +383,10 @@ already-published version is fine, though: platforms are separate subdirs.
 
 #### Published so far
 
-`marimo-r 0.23.16.1` is live for **linux-64** only — build `_0` published from
-a developer machine, build `_1` by CI. Both predate the version-scheme change
-above; the next release is `0.24.0`. Verified by installing it from the
+`marimo-r 0.24.0` (build `_0`, linux-64) is live, published by CI at
+`level=publish` with the R integration suite green against the released
+commit. `0.23.16.1` builds `_0`/`_1` remain from before the version-scheme
+change. Verified by installing it from the
 channel into a clean workspace: the `sql` extra resolved `r-dbi` and
 `r-duckdb`, R resolved from the install prefix with `isolated: True`, and
 `marimo.r("sum(1:10)")` returned `55`.
