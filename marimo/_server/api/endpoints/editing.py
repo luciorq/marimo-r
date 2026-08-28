@@ -5,8 +5,10 @@ from typing import TYPE_CHECKING
 
 from starlette.authentication import requires
 
+from marimo import _loggers
 from marimo._cli.sandbox import SandboxMode
 from marimo._messaging.notification import FocusCellNotification
+from marimo._r.formatting import DefaultRFormatter
 from marimo._server.api.deps import AppState
 from marimo._server.api.utils import (
     dispatch_control_request,
@@ -27,10 +29,13 @@ from marimo._server.models.models import (
     UpdateCellConfigRequest,
 )
 from marimo._server.router import APIRouter
+from marimo._types.ids import CellId_t
 from marimo._utils.formatter import DefaultFormatter
 
 if TYPE_CHECKING:
     from starlette.requests import Request
+
+LOGGER = _loggers.marimo_logger()
 
 # Router for editing endpoints
 router = APIRouter()
@@ -139,34 +144,55 @@ async def format_cell(request: Request) -> FormatResponse:
     """
     app_state = AppState(request)
     body = await parse_request(request, cls=FormatCellsRequest)
-    formatter = DefaultFormatter(line_length=body.line_length)
     filename = app_state.require_current_session().app_file_manager.path
     if filename and filename.endswith((".md", ".qmd")):
         filename = f"{filename}.py"
 
-    try:
-        codes = await formatter.format(body.codes, filename)
-        return FormatResponse(codes)
-    except ModuleNotFoundError:
-        # In multi-sandbox mode each kernel has its own venv, so installing
-        # ruff into the server wouldn't help the kernel.  Just surface the
-        # error without an install prompt.
-        if app_state.session_manager.sandbox_mode is SandboxMode.MULTI:
+    # Split cells by language
+    python_codes: dict[CellId_t, str] = {}
+    r_codes: dict[CellId_t, str] = {}
+    for cell_id, code in body.codes.items():
+        lang = body.languages.get(cell_id, "python")
+        if lang == "r":
+            r_codes[cell_id] = code
+        else:
+            python_codes[cell_id] = code
+
+    formatted: dict[CellId_t, str] = {}
+
+    # Format Python cells
+    if python_codes:
+        try:
+            py_formatter = DefaultFormatter(line_length=body.line_length)
+            formatted.update(await py_formatter.format(python_codes, filename))
+        except ModuleNotFoundError:
+            # In multi-sandbox mode each kernel has its own venv, so installing
+            # ruff into the server wouldn't help the kernel.  Just surface the
+            # error without an install prompt.
+            if app_state.session_manager.sandbox_mode is SandboxMode.MULTI:
+                raise ModuleNotFoundError(
+                    "Server does not have a formatter. Please install ruff"
+                ) from None
+            # For single-sandbox and non-sandbox modes the server *is* the
+            # formatting environment, so offer to install ruff there.
+            notify_server_missing_packages(
+                app_state.get_current_session(),
+                app_state.get_current_session_id(),
+                ["ruff"],
+            )
             raise ModuleNotFoundError(
                 "Server does not have a formatter. Please install ruff"
             ) from None
-        # For single-sandbox and non-sandbox modes the server *is* the
-        # formatting environment, so offer to install ruff there.
-        notify_server_missing_packages(
-            app_state.get_current_session(),
-            app_state.get_current_session_id(),
-            ["ruff"],
-        )
-        # Re-raise without .name so the error handler returns 500 without
-        # sending a duplicate notification.
-        raise ModuleNotFoundError(
-            "Server does not have a formatter. Please install ruff"
-        ) from None
+
+    # Format R cells
+    if r_codes:
+        try:
+            r_formatter = DefaultRFormatter(line_length=body.line_length)
+            formatted.update(await r_formatter.format(r_codes, filename))
+        except ModuleNotFoundError:
+            LOGGER.warning("R formatter not available, skipping R cells")
+
+    return FormatResponse(codes=formatted)
 
 
 @router.post("/set_cell_config")

@@ -707,6 +707,109 @@ export const UserConfigForm: React.FC = () => {
               />
               <OverriddenFormField
                 control={form.control}
+                name="language_servers.r.enabled"
+                render={({ field, override }) => (
+                  <div className="flex flex-col gap-1">
+                    <FormItem className={formItemClasses}>
+                      <FormLabel>
+                        <Badge variant="defaultOutline" className="mr-2">
+                          Beta
+                        </Badge>
+                        R Language Server
+                      </FormLabel>
+                      <FormControl>
+                        <Checkbox
+                          data-testid="r-lsp-checkbox"
+                          checked={field.value}
+                          disabled={field.disabled}
+                          onCheckedChange={(checked) => {
+                            field.onChange(Boolean(checked));
+                          }}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                      <IsOverridden override={override} />
+                    </FormItem>
+                    {field.value && !capabilities.r_lsp && (
+                      <Banner kind="danger">
+                        R language server is not available. Install the R{" "}
+                        <Kbd className="inline">languageserver</Kbd> package.
+                      </Banner>
+                    )}
+                  </div>
+                )}
+              />
+              <OverriddenFormField
+                control={form.control}
+                name="language_servers.r.backend"
+                render={({ field, override }) => {
+                  const rEnabled = form.watch("language_servers.r.enabled");
+                  if (!rEnabled) {
+                    return <div />;
+                  }
+                  return (
+                    <FormItem className={formItemClasses}>
+                      <FormLabel>R LSP Backend</FormLabel>
+                      <FormControl>
+                        <NativeSelect
+                          data-testid="r-lsp-backend-select"
+                          onChange={(e) => field.onChange(e.target.value)}
+                          value={field.value ?? "languageserver"}
+                          disabled={field.disabled}
+                          className="inline-flex mr-2"
+                        >
+                          <option value="languageserver">
+                            languageserver (R package, recommended)
+                          </option>
+                          <option value="auto">Auto</option>
+                        </NativeSelect>
+                      </FormControl>
+                      <FormMessage />
+                      <IsOverridden override={override} />
+                      <FormDescription>
+                        <Kbd className="inline">languageserver</Kbd> provides
+                        completions, hover, and diagnostics. R cells are
+                        formatted by <Kbd className="inline">air</Kbd>{" "}
+                        regardless of this setting.
+                      </FormDescription>
+                    </FormItem>
+                  );
+                }}
+              />
+              <OverriddenFormField
+                control={form.control}
+                name="language_servers.r.jarl.enabled"
+                render={({ field, override }) => {
+                  const rEnabled = form.watch("language_servers.r.enabled");
+                  if (!rEnabled) {
+                    return <div />;
+                  }
+                  return (
+                    <FormItem className={formItemClasses}>
+                      <FormLabel className="font-normal">
+                        R lint diagnostics (jarl)
+                      </FormLabel>
+                      <FormControl>
+                        <Checkbox
+                          data-testid="r-jarl-checkbox"
+                          checked={field.value === true}
+                          disabled={field.disabled || override.isOverridden}
+                          onCheckedChange={field.onChange}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                      <IsOverridden override={override} />
+                      <FormDescription>
+                        Runs <Kbd className="inline">jarl</Kbd> alongside the
+                        backend above, adding its lint diagnostics without
+                        replacing completions or hover.
+                      </FormDescription>
+                    </FormItem>
+                  );
+                }}
+              />
+              <OverriddenFormField
+                control={form.control}
                 name="diagnostics.enabled"
                 render={({ field, override }) => (
                   <FormItem className={formItemClasses}>

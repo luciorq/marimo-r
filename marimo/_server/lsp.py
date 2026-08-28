@@ -9,7 +9,7 @@ import subprocess
 import time
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Any, Literal, cast
+from typing import Any, ClassVar, Literal, Optional, cast
 
 from marimo import _loggers
 from marimo._config.config import MarimoConfig
@@ -61,6 +61,20 @@ class LspServer(ABC):
 
 
 class BaseLspServer(LspServer):
+    # Extension surface for out-of-tree servers (see marimo._r.install):
+    #
+    # - REQUIRES_CONFIG_READER: the composite passes its MarimoConfigReader as
+    #   a second constructor argument.
+    # - is_enabled_in(config) classmethod (optional): custom enablement, for
+    #   servers whose toggle is not a plain `language_servers.<id>.enabled`.
+    # - get_environment(): the environment for the spawned process.
+    #
+    # Subclasses must NOT rely on overriding stop() for cleanup: the composite
+    # tears children down via _begin_stop()/_finish_stop() (two-phase, so all
+    # servers get SIGTERM concurrently and wait timeouts do not stack) and
+    # never calls subclass stop().
+    REQUIRES_CONFIG_READER: ClassVar[bool] = False
+
     def __init__(self, port: int) -> None:
         self.port = port
         self.process: subprocess.Popen[str] | None = None
@@ -69,6 +83,10 @@ class BaseLspServer(LspServer):
         self._started_at: float | None = None  # Unix timestamp
         self._start_lock = asyncio.Lock()
         self.log_file = _loggers.get_log_directory() / f"{self.id}.log"
+
+    def get_environment(self) -> Optional[dict[str, str]]:
+        """Environment for the server process; None inherits this process's."""
+        return None
 
     @server_tracer.start_as_current_span("lsp_server.start")
     async def start(self) -> AlertNotification | None:
@@ -111,6 +129,9 @@ class BaseLspServer(LspServer):
                 stderr=subprocess.DEVNULL if is_windows() else subprocess.PIPE,
                 stdin=None,
                 text=True,
+                # None inherits this process's environment, which is what
+                # every server but R wants.
+                env=self.get_environment(),
                 # Create a new process group so we can kill the entire
                 # tree (parent + children) on shutdown. Without this,
                 # child processes (e.g. copilot language-server.cjs)
@@ -801,7 +822,11 @@ class NoopLspServer(LspServer):
 
 
 class CompositeLspServer(LspServer):
-    LANGUAGE_SERVERS = {
+    # Extended in place by plugins/forks (see marimo._r.install). A server
+    # class may set `REQUIRES_CONFIG_READER = True` to receive the config
+    # reader, and may define `is_enabled_in(config)` when its enablement is not
+    # a plain top-level `language_servers.<id>.enabled` toggle.
+    LANGUAGE_SERVERS: dict[str, type[BaseLspServer]] = {
         "pylsp": PyLspServer,
         "basedpyright": BasedpyrightServer,
         "ty": TyServer,
@@ -828,9 +853,22 @@ class CompositeLspServer(LspServer):
         self.servers: dict[str, LspServer] = {}
         for server_name, server_constructor in self.LANGUAGE_SERVERS.items():
             last_free_port = find_free_port(last_free_port + 1)
-            self.servers[server_name] = server_constructor(last_free_port)
+            if server_constructor.REQUIRES_CONFIG_READER:
+                # The base constructor takes only a port; classes that opt in
+                # declare the wider signature themselves.
+                self.servers[server_name] = cast(Any, server_constructor)(
+                    last_free_port, config_reader
+                )
+            else:
+                self.servers[server_name] = server_constructor(last_free_port)
 
     def _is_enabled(self, config: MarimoConfig, server_name: str) -> bool:
+        custom = getattr(
+            self.LANGUAGE_SERVERS.get(server_name), "is_enabled_in", None
+        )
+        if custom is not None:
+            return bool(custom(config))
+
         if server_name == "copilot":
             copilot = config["completion"]["copilot"]
             return copilot is True or copilot == "github"
@@ -993,3 +1031,10 @@ def any_lsp_server_running(config: MarimoConfig) -> bool:
         for server in language_servers.values()
     )
     return (copilot_enabled is not False) or language_servers_enabled
+
+
+# marimo-r hook: importing the module self-registers the R language servers
+# into LANGUAGE_SERVERS (see marimo._r.install.register_lsp_servers). A plain
+# module import, deliberately: it accesses no attributes, so it is safe in both
+# import orders of the lsp <-> lsp_servers cycle.
+import marimo._r.lsp_servers  # noqa: E402, F401

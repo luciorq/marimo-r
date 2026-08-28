@@ -142,7 +142,8 @@ export const copilotBundle = (config: CompletionConfig): Extension => {
             return "";
           }
 
-          const language = state.field(languageAdapterState).type;
+          const language = state.field(languageAdapterState)
+            .type as AiInlineCompletionRequest["language"];
           let res = await API.post<AiInlineCompletionRequest, string>(
             "/ai/inline_completion",
             { prefix, suffix, language },

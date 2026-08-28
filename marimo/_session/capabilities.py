@@ -80,6 +80,11 @@ _EDIT_COMMANDS: frozenset[type] = frozenset(
     }
 )
 
+# marimo-r hook: R commands are tiered here so required_capability sees them.
+from marimo._r.install import r_edit_commands  # noqa: E402
+
+_EDIT_COMMANDS = _EDIT_COMMANDS | r_edit_commands()
+
 
 def required_capability(command_type: type) -> Capability:
     """The minimum capability required to issue a command of this type.

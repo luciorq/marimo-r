@@ -17,6 +17,7 @@ from marimo._messaging.context import HTTP_REQUEST_CTX
 from marimo._runtime.cell_output_list import CellOutputList
 
 if TYPE_CHECKING:
+    import subprocess
     from collections.abc import Iterator
 
     import duckdb
@@ -70,6 +71,7 @@ class ExecutionContext:
     # outputs set imperatively via mo.output.append and associated functions
     output: CellOutputList = field(default_factory=CellOutputList)
     duckdb_connection: duckdb.DuckDBPyConnection | None = None
+    r_process: subprocess.Popen[str] | None = None
 
     @contextmanager
     def with_connection(
@@ -79,6 +81,15 @@ class ExecutionContext:
         self.duckdb_connection = connection
         yield
         self.duckdb_connection = old_conn
+
+    @contextmanager
+    def with_r_process(self, process: subprocess.Popen[str]) -> Iterator[None]:
+        old_process = self.r_process
+        self.r_process = process
+        try:
+            yield
+        finally:
+            self.r_process = old_process
 
 
 @dataclass

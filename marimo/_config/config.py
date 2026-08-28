@@ -492,6 +492,41 @@ class PyreflyLanguageServerConfig(TypedDict, total=False):
 
 
 @dataclass
+class RJarlConfig(TypedDict, total=False):
+    """
+    Configuration options for jarl.
+
+    jarl is a linter, not a language server in the usual sense: it provides
+    diagnostics and quick fixes and nothing else. It therefore runs *alongside*
+    the backend chosen above rather than instead of it, so you keep completions
+    and hover while gaining jarl's lint rules.
+    """
+
+    enabled: bool
+
+
+class RLanguageServerConfig(TypedDict, total=False):
+    """
+    Configuration options for R Language Server.
+
+    `languageserver` provides completions, hover, and diagnostics; `auto` is
+    currently equivalent to it.
+
+    Air is deliberately not an option here. Its language server offers
+    formatting and nothing else, and marimo does not format over LSP — R cells
+    are formatted by `marimo/_utils/formatter.py`, which runs `air format`
+    directly. Selecting it as a backend started a server that answered no
+    request marimo makes. Air still does all R formatting; it just is not a
+    language server backend. A legacy `backend = "air"` is read as
+    `languageserver`.
+    """
+
+    enabled: bool
+    backend: Literal["auto", "languageserver"]
+    jarl: RJarlConfig
+
+
+@dataclass
 class LanguageServersConfig(TypedDict, total=False):
     """Configuration options for language servers.
 
@@ -501,12 +536,15 @@ class LanguageServersConfig(TypedDict, total=False):
     - `basedpyright`: the basedpyright config
     - `ty`: the ty config
     - `pyrefly`: the pyrefly config
+    - `r`: the R language server config
     """
 
     pylsp: PythonLanguageServerConfig
     basedpyright: BasedpyrightServerConfig
     ty: TyLanguageServerConfig
     pyrefly: PyreflyLanguageServerConfig
+
+    r: RLanguageServerConfig
 
 
 @dataclass
@@ -773,7 +811,11 @@ DEFAULT_CONFIG: MarimoConfig = {
             "enable_pydocstyle": False,
             "enable_pylint": False,
             "enable_pyflakes": False,
-        }
+        },
+        "r": {
+            "enabled": True,
+            "backend": "languageserver",
+        },
     },
     "ai": {
         "enabled": True,

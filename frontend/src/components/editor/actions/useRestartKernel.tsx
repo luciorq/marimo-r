@@ -11,18 +11,23 @@ import { reloadSafe } from "@/utils/reload-safe";
 export function useRestartKernel() {
   const { openConfirm } = useImperativeModal();
   const setConnection = useSetAtom(connectionAtom);
-  const { sendRestart } = useRequestClient();
+  const { sendRestart, resetRSession } = useRequestClient();
 
   return () => {
     openConfirm({
       title: "Restart Kernel",
       description:
-        "This will restart the Python kernel. You'll lose all data that's in memory. You will also lose any unsaved changes, so make sure to save your work before restarting.",
+        "This will restart the Python kernel and reset the R session. You'll lose all data that's in memory. You will also lose any unsaved changes, so make sure to save your work before restarting.",
       variant: "destructive",
       confirmAction: (
         <AlertDialogDestructiveAction
           onClick={async () => {
             setConnection({ state: WebSocketState.CLOSING });
+            try {
+              await resetRSession();
+            } catch {
+              // Restart should proceed even if reset fails.
+            }
             await sendRestart();
             reloadSafe();
           }}

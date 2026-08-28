@@ -322,6 +322,11 @@ class DependencyManager:
         return missing
 
     @staticmethod
+    def which_path(pkg: str) -> str | None:
+        """Return the path to a CLI command if installed."""
+        return shutil.which(pkg)
+
+    @staticmethod
     def require_many(
         why: str,
         *dependencies: DependencyLike,

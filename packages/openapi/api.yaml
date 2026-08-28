@@ -97,6 +97,7 @@ components:
           enum:
           - markdown
           - python
+          - r
           - sql
         prompt:
           type: string
@@ -185,6 +186,7 @@ components:
           enum:
           - markdown
           - python
+          - r
           - sql
         prefix:
           type: string
@@ -2357,6 +2359,11 @@ components:
           additionalProperties:
             type: string
           type: object
+        languages:
+          additionalProperties:
+            type: string
+          default: {}
+          type: object
         lineLength:
           type: integer
       required:
@@ -2745,7 +2752,7 @@ components:
         \ in __post_init__.\n\n    Attributes:\n        terminal: Terminal access\
         \ (unavailable on Windows/Pyodide).\n        pylsp: Python Language Server\
         \ Protocol installed.\n        ty: ty type checker installed.\n        basedpyright:\
-        \ basedpyright type checker installed."
+        \ basedpyright type checker installed.\n        r_lsp: R language server available."
       properties:
         basedpyright:
           default: false
@@ -2754,6 +2761,9 @@ components:
           default: false
           type: boolean
         pyrefly:
+          default: false
+          type: boolean
+        r_lsp:
           default: false
           type: boolean
         terminal:
@@ -2929,6 +2939,7 @@ components:
           - $ref: '#/components/schemas/ListSecretKeysCommand'
           - $ref: '#/components/schemas/RefreshSecretsCommand'
           - $ref: '#/components/schemas/ClearCacheCommand'
+          - $ref: '#/components/schemas/ResetRSessionCommand'
           - $ref: '#/components/schemas/GetCacheInfoCommand'
           - $ref: '#/components/schemas/StopKernelCommand'
           discriminator:
@@ -2954,6 +2965,7 @@ components:
               preview-sql-table: '#/components/schemas/PreviewSQLTableCommand'
               refresh-secrets: '#/components/schemas/RefreshSecretsCommand'
               rename-notebook: '#/components/schemas/RenameNotebookCommand'
+              reset-r-session: '#/components/schemas/ResetRSessionCommand'
               set-breakpoints: '#/components/schemas/SetBreakpointsCommand'
               stop-kernel: '#/components/schemas/StopKernelCommand'
               storage-download: '#/components/schemas/StorageDownloadCommand'
@@ -3102,7 +3114,8 @@ components:
     LanguageServersConfig:
       description: "Configuration options for language servers.\n\n    **Keys.**\n\
         \n    - `pylsp`: the pylsp config\n    - `basedpyright`: the basedpyright\
-        \ config\n    - `ty`: the ty config\n    - `pyrefly`: the pyrefly config"
+        \ config\n    - `ty`: the ty config\n    - `pyrefly`: the pyrefly config\n\
+        \    - `r`: the R language server config"
       properties:
         basedpyright:
           $ref: '#/components/schemas/BasedpyrightServerConfig'
@@ -3110,6 +3123,8 @@ components:
           $ref: '#/components/schemas/PythonLanguageServerConfig'
         pyrefly:
           $ref: '#/components/schemas/PyreflyLanguageServerConfig'
+        r:
+          $ref: '#/components/schemas/RLanguageServerConfig'
         ty:
           $ref: '#/components/schemas/TyLanguageServerConfig'
       required: []
@@ -4418,6 +4433,44 @@ components:
       - value
       title: QueryParamsSetNotification
       type: object
+    RJarlConfig:
+      description: 'Configuration options for jarl.
+
+
+        jarl is a linter, not a language server in the usual sense: it provides
+
+        diagnostics and quick fixes and nothing else. It therefore runs *alongside*
+
+        the backend chosen above rather than instead of it, so you keep completions
+
+        and hover while gaining jarl''s lint rules.'
+      properties:
+        enabled:
+          type: boolean
+      required: []
+      title: RJarlConfig
+      type: object
+    RLanguageServerConfig:
+      description: "Configuration options for R Language Server.\n\n`languageserver`\
+        \ provides completions, hover, and diagnostics; `auto` is\ncurrently equivalent\
+        \ to it.\n\nAir is deliberately not an option here. Its language server offers\n\
+        formatting and nothing else, and marimo does not format over LSP \u2014 R\
+        \ cells\nare formatted by `marimo/_utils/formatter.py`, which runs `air format`\n\
+        directly. Selecting it as a backend started a server that answered no\nrequest\
+        \ marimo makes. Air still does all R formatting; it just is not a\nlanguage\
+        \ server backend. A legacy `backend = \"air\"` is read as\n`languageserver`."
+      properties:
+        backend:
+          enum:
+          - auto
+          - languageserver
+        enabled:
+          type: boolean
+        jarl:
+          $ref: '#/components/schemas/RJarlConfig'
+      required: []
+      title: RLanguageServerConfig
+      type: object
     ReadCodeResponse:
       properties:
         contents:
@@ -4538,6 +4591,21 @@ components:
     RequestId:
       format: request-id
       type: string
+    ResetRSessionCommand:
+      description: Reset the R session for the current kernel.
+      properties:
+        type:
+          enum:
+          - reset-r-session
+      required:
+      - type
+      title: ResetRSessionCommand
+      type: object
+    ResetRSessionRequest:
+      properties: {}
+      required: []
+      title: ResetRSessionRequest
+      type: object
     RunningNotebooksResponse:
       properties:
         files:
@@ -7226,6 +7294,26 @@ paths:
               schema:
                 $ref: '#/components/schemas/SuccessResponse'
           description: Rename the current app
+  /api/kernel/reset_r_session:
+    post:
+      parameters:
+      - in: header
+        name: Marimo-Session-Id
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResetRSessionRequest'
+      responses:
+        200:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+          description: Reset the R session for the current kernel.
   /api/kernel/restart_session:
     post:
       parameters:

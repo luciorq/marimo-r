@@ -342,6 +342,23 @@ const AddCellButtons: React.FC<{
           <DatabaseIcon className="mr-2 size-4 shrink-0" />
           SQL
         </Button>
+        <Button
+          className={buttonClass}
+          variant="text"
+          size="sm"
+          disabled={!canInteractWithApp}
+          onClick={() => {
+            maybeAddMarimoImport({ autoInstantiate: true, createNewCell });
+
+            createNewCell({
+              cellId: { type: "__end__", columnId },
+              before: false,
+              code: LanguageAdapters.r.defaultCode,
+            });
+          }}
+        >
+          <SquareCodeIcon className="mr-2 size-4 shrink-0" />R
+        </Button>
         {aiEnabled && (
           <Tooltip
             content={

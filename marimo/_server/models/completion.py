@@ -33,7 +33,7 @@ class AiCompletionContext(msgspec.Struct, rename="camel"):
     plain_text: str = ""
 
 
-Language = Literal["python", "markdown", "sql"]
+Language = Literal["python", "markdown", "sql", "r"]
 
 
 UIMessage = dict[str, Any]

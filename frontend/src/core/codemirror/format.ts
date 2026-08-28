@@ -18,6 +18,7 @@ import { cellIdState } from "./config/extension";
 import { languageAdapterState } from "./language/extension";
 import { SCHEMA_CACHE } from "./language/languages/sql/completion-store";
 import { isKnownDialect } from "./language/languages/sql/utils";
+import { languageMetadataField } from "./language/metadata";
 import {
   getEditorCodeAsPython,
   updateEditorCodeFromPython,
@@ -32,11 +33,26 @@ export const formattingChangeEffect = StateEffect.define<boolean>();
  */
 export async function formatEditorViews(views: Record<CellId, EditorView>) {
   const { sendFormat } = getRequestClient();
-  const codes = Objects.mapValues(views, (view) => getEditorCodeAsPython(view));
+
+  // Build codes and languages maps, sending raw code for R cells
+  const codes: Record<CellId, string> = {};
+  const languages: Record<CellId, string> = {};
+
+  for (const [cellId, view] of Objects.entries(views)) {
+    const adapter = view.state.field(languageAdapterState);
+    if (adapter.type === "r") {
+      // Send raw R code, not Python-wrapped
+      codes[cellId as CellId] = view.state.doc.toString();
+      languages[cellId as CellId] = "r";
+    } else {
+      codes[cellId as CellId] = getEditorCodeAsPython(view);
+    }
+  }
 
   const formatResponse = await sendFormat({
     codes,
     lineLength: getResolvedMarimoConfig().formatting.line_length,
+    languages,
   });
 
   for (const [cellIdString, formattedCode] of Objects.entries(
@@ -56,13 +72,31 @@ export async function formatEditorViews(views: Record<CellId, EditorView>) {
       continue;
     }
 
+    const adapter = view.state.field(languageAdapterState);
     const actions = view.state.facet(cellActionsState);
-    actions.updateCellCode({
-      cellId,
-      code: formattedCode,
-      formattingChange: true,
-    });
-    updateEditorCodeFromPython(view, formattedCode);
+
+    if (adapter.type === "r") {
+      // For R cells: update notebook state with the Python-wrapped version
+      const metadata = view.state.field(languageMetadataField);
+      const [pythonCode] = adapter.transformOut(formattedCode, metadata);
+      actions.updateCellCode({
+        cellId,
+        code: pythonCode,
+        formattingChange: true,
+      });
+      // Update editor with raw formatted R code
+      replaceEditorContent(view, formattedCode, {
+        effects: [formattingChangeEffect.of(true)],
+      });
+    } else {
+      // Python (and other) cells: existing path
+      actions.updateCellCode({
+        cellId,
+        code: formattedCode,
+        formattingChange: true,
+      });
+      updateEditorCodeFromPython(view, formattedCode);
+    }
   }
 }
 
@@ -72,6 +106,50 @@ export async function formatEditorViews(views: Record<CellId, EditorView>) {
 export function formatAll() {
   const views = notebookCellEditorViews(getNotebook());
   return formatEditorViews(views);
+}
+
+/**
+ * Format the R code in a single editor view via the marimo server.
+ *
+ * Analogous to formatSQL — used by the R cell panel format button.
+ */
+export async function formatR(editor: EditorView) {
+  const { sendFormat } = getRequestClient();
+
+  const languageAdapter = editor.state.field(languageAdapterState);
+  if (languageAdapter.type !== "r") {
+    Logger.error("Language adapter is not R");
+    return;
+  }
+
+  const cellId = editor.state.facet(cellIdState);
+  const rawRCode = editor.state.doc.toString();
+
+  const formatResponse = await sendFormat({
+    codes: { [cellId]: rawRCode },
+    lineLength: getResolvedMarimoConfig().formatting.line_length,
+    languages: { [cellId]: "r" },
+  });
+
+  const formattedCode = formatResponse.codes[cellId];
+  if (!formattedCode || formattedCode === rawRCode) {
+    return;
+  }
+
+  // Update notebook state with Python-wrapped version
+  const metadata = editor.state.field(languageMetadataField);
+  const [pythonCode] = languageAdapter.transformOut(formattedCode, metadata);
+  const actions = editor.state.facet(cellActionsState);
+  actions.updateCellCode({
+    cellId,
+    code: pythonCode,
+    formattingChange: true,
+  });
+
+  // Update editor with raw formatted R code
+  replaceEditorContent(editor, formattedCode, {
+    effects: [formattingChangeEffect.of(true)],
+  });
 }
 
 /**

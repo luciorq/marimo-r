@@ -3,8 +3,18 @@ from __future__ import annotations
 
 from importlib.metadata import PackageNotFoundError, version
 
+#: The distribution this package ships as.
+#:
+#: This fork publishes as `marimo-r` while keeping `marimo` as the *import*
+#: name, so it is a drop-in replacement that cannot be co-installed with
+#: upstream. Anywhere the distribution name is needed — version lookup, the
+#: dependency a sandbox pins — use this rather than the literal "marimo", or
+#: the sandbox will silently install upstream marimo and lose R support.
+DISTRIBUTION_NAME = "marimo-r"
+
 _DISTRIBUTIONS = (
-    "marimo",  # Standard installation
+    DISTRIBUTION_NAME,  # This fork
+    "marimo",  # Upstream, if someone runs this source tree unrenamed
     "marimo-base",  # Slim distribution used by marimo.app
 )
 

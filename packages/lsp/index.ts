@@ -122,6 +122,20 @@ export function parseTypedCommand(typedCommand: string): string[] {
       return [binaryPath, "lsp"];
     case "ty":
       return [binaryPath, "server"];
+    case "air":
+      return [binaryPath, "language-server"];
+    case "jarl":
+      return [binaryPath, "server"];
+    case "languageserver":
+      // R languageserver: binaryPath is the R binary (e.g. "R" or "/usr/bin/R")
+      // --slave suppresses the R startup banner which would corrupt the LSP stdio protocol
+      return [
+        binaryPath,
+        "--vanilla",
+        "--slave",
+        "-e",
+        "languageserver::run()",
+      ];
     default:
       throw new Error(`Unknown LSP server type: ${serverType}`);
   }

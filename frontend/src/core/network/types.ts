@@ -174,6 +174,7 @@ export interface EditRequests {
   sendDocumentTransaction: (
     request: NotebookDocumentTransactionRequest,
   ) => Promise<null>;
+  resetRSession: () => Promise<null>;
   sendInstallMissingPackages: (
     request: InstallPackagesRequest,
   ) => Promise<null>;

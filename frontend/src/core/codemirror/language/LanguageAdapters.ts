@@ -3,6 +3,7 @@
 import { once } from "@/utils/once";
 import { MarkdownLanguageAdapter } from "./languages/markdown";
 import { PythonLanguageAdapter } from "./languages/python";
+import { RLanguageAdapter } from "./languages/r";
 import { SQLLanguageAdapter } from "./languages/sql/sql";
 import type { LanguageAdapter, LanguageAdapterType } from "./types";
 
@@ -10,6 +11,7 @@ import type { LanguageAdapter, LanguageAdapterType } from "./types";
 const createPythonAdapter = once(() => new PythonLanguageAdapter());
 const createMarkdownAdapter = once(() => new MarkdownLanguageAdapter());
 const createSqlAdapter = once(() => new SQLLanguageAdapter());
+const createRAdapter = once(() => new RLanguageAdapter());
 
 export const LanguageAdapters: Record<LanguageAdapterType, LanguageAdapter> = {
   // Getters to prevent circular dependencies
@@ -21,6 +23,9 @@ export const LanguageAdapters: Record<LanguageAdapterType, LanguageAdapter> = {
   },
   get sql() {
     return createSqlAdapter();
+  },
+  get r() {
+    return createRAdapter();
   },
 };
 

@@ -13,7 +13,10 @@ from marimo._code_mode.screenshot_meta import (
     SCREENSHOT_AUTH_TOKEN_KEY,
     SCREENSHOT_SERVER_URL_KEY,
 )
-from marimo._runtime.commands import HTTPRequest, UpdateUIElementCommand
+from marimo._runtime.commands import (
+    HTTPRequest,
+    UpdateUIElementCommand,
+)
 from marimo._server.api.deps import AppState
 from marimo._server.api.endpoints.ws.ws_connection_validator import (
     FILE_QUERY_PARAM_KEY,
@@ -33,6 +36,7 @@ from marimo._server.models.models import (
     InvokeFunctionRequest,
     KernelStatusResponse,
     ModelRequest,
+    ResetRSessionRequest,
     SetBreakpointsRequest,
     SuccessResponse,
 )
@@ -529,6 +533,35 @@ async def restart_session(
         LOGGER.warning("Unable to close RTC doc as no file key was provided")
 
     return SuccessResponse()
+
+
+@router.post("/reset_r_session")
+@requires("edit")
+async def reset_r_session(
+    *,
+    request: Request,
+) -> BaseResponse:
+    """
+    parameters:
+        - in: header
+          name: Marimo-Session-Id
+          schema:
+            type: string
+          required: true
+    requestBody:
+        content:
+            application/json:
+                schema:
+                    $ref: "#/components/schemas/ResetRSessionRequest"
+    responses:
+        200:
+            description: Reset the R session for the current kernel.
+            content:
+                application/json:
+                    schema:
+                        $ref: "#/components/schemas/SuccessResponse"
+    """
+    return await dispatch_control_request(request, ResetRSessionRequest())
 
 
 @router.post("/shutdown")

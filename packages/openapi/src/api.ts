@@ -2354,6 +2354,47 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/kernel/reset_r_session": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: {
+      parameters: {
+        query?: never;
+        header: {
+          "Marimo-Session-Id": string;
+        };
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: {
+        content: {
+          "application/json": components["schemas"]["ResetRSessionRequest"];
+        };
+      };
+      responses: {
+        /** @description Reset the R session for the current kernel. */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["SuccessResponse"];
+          };
+        };
+      };
+    };
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/kernel/restart_session": {
     parameters: {
       query?: never;
@@ -3669,7 +3710,7 @@ export interface components {
        * @default python
        * @enum {unknown}
        */
-      language?: "markdown" | "python" | "sql";
+      language?: "markdown" | "python" | "r" | "sql";
       prompt: string;
       /** @default null */
       selectedText?: string | null;
@@ -3730,7 +3771,7 @@ export interface components {
        * @default python
        * @enum {unknown}
        */
-      language?: "markdown" | "python" | "sql";
+      language?: "markdown" | "python" | "r" | "sql";
       prefix: string;
       suffix: string;
     };
@@ -5020,6 +5061,10 @@ export interface components {
       codes: {
         [key: string]: string;
       };
+      /** @default {} */
+      languages?: {
+        [key: string]: string;
+      };
       lineLength: number;
     };
     /** FormatResponse */
@@ -5300,6 +5345,7 @@ export interface components {
      *             pylsp: Python Language Server Protocol installed.
      *             ty: ty type checker installed.
      *             basedpyright: basedpyright type checker installed.
+     *             r_lsp: R language server available.
      */
     KernelCapabilitiesNotification: {
       /** @default false */
@@ -5308,6 +5354,8 @@ export interface components {
       pylsp?: boolean;
       /** @default false */
       pyrefly?: boolean;
+      /** @default false */
+      r_lsp?: boolean;
       /** @default false */
       terminal?: boolean;
       /** @default false */
@@ -5423,6 +5471,7 @@ export interface components {
         | components["schemas"]["ListSecretKeysCommand"]
         | components["schemas"]["RefreshSecretsCommand"]
         | components["schemas"]["ClearCacheCommand"]
+        | components["schemas"]["ResetRSessionCommand"]
         | components["schemas"]["GetCacheInfoCommand"]
         | components["schemas"]["StopKernelCommand"];
       /** @enum {unknown} */
@@ -5502,11 +5551,13 @@ export interface components {
      *         - `basedpyright`: the basedpyright config
      *         - `ty`: the ty config
      *         - `pyrefly`: the pyrefly config
+     *         - `r`: the R language server config
      */
     LanguageServersConfig: {
       basedpyright?: components["schemas"]["BasedpyrightServerConfig"];
       pylsp?: components["schemas"]["PythonLanguageServerConfig"];
       pyrefly?: components["schemas"]["PyreflyLanguageServerConfig"];
+      r?: components["schemas"]["RLanguageServerConfig"];
       ty?: components["schemas"]["TyLanguageServerConfig"];
     };
     /** LayoutConfig */
@@ -6295,6 +6346,39 @@ export interface components {
       op: "query-params-set";
       value: string | string[];
     };
+    /**
+     * RJarlConfig
+     * @description Configuration options for jarl.
+     *
+     *     jarl is a linter, not a language server in the usual sense: it provides
+     *     diagnostics and quick fixes and nothing else. It therefore runs *alongside*
+     *     the backend chosen above rather than instead of it, so you keep completions
+     *     and hover while gaining jarl's lint rules.
+     */
+    RJarlConfig: {
+      enabled?: boolean;
+    };
+    /**
+     * RLanguageServerConfig
+     * @description Configuration options for R Language Server.
+     *
+     *     `languageserver` provides completions, hover, and diagnostics; `auto` is
+     *     currently equivalent to it.
+     *
+     *     Air is deliberately not an option here. Its language server offers
+     *     formatting and nothing else, and marimo does not format over LSP — R cells
+     *     are formatted by `marimo/_utils/formatter.py`, which runs `air format`
+     *     directly. Selecting it as a backend started a server that answered no
+     *     request marimo makes. Air still does all R formatting; it just is not a
+     *     language server backend. A legacy `backend = "air"` is read as
+     *     `languageserver`.
+     */
+    RLanguageServerConfig: {
+      /** @enum {unknown} */
+      backend?: "auto" | "languageserver";
+      enabled?: boolean;
+      jarl?: components["schemas"]["RJarlConfig"];
+    };
     /** ReadCodeResponse */
     ReadCodeResponse: {
       contents: string;
@@ -6381,6 +6465,16 @@ export interface components {
     };
     /** Format: request-id */
     RequestId: TypedString<"RequestId">;
+    /**
+     * ResetRSessionCommand
+     * @description Reset the R session for the current kernel.
+     */
+    ResetRSessionCommand: {
+      /** @enum {unknown} */
+      type: "reset-r-session";
+    };
+    /** ResetRSessionRequest */
+    ResetRSessionRequest: Record<string, any>;
     /** RunningNotebooksResponse */
     RunningNotebooksResponse: {
       files: components["schemas"]["MarimoFile"][];

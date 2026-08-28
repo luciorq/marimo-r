@@ -4,6 +4,7 @@ from __future__ import annotations
 import atexit
 import os
 import platform
+import re
 import shutil
 import signal
 import subprocess
@@ -27,7 +28,7 @@ from marimo._utils.inline_script_metadata import (
 )
 from marimo._utils.uv import find_uv_bin
 from marimo._utils.versions import is_editable
-from marimo._version import __version__
+from marimo._version import DISTRIBUTION_NAME, __version__
 
 
 class SandboxMode(Enum):
@@ -147,21 +148,30 @@ def _normalize_sandbox_dependencies(
         if not features:
             return dep
 
-        # If already bracketed, add the features to the existing bracket
-        if "[" in dep:
-            return dep.replace("marimo[", f"marimo[{','.join(features)},")
-
-        return dep.replace("marimo", f"marimo[{','.join(features)}]")
+        # Operate on the name, never by substring replacement: this fork's
+        # distribution is `marimo-r`, and replacing "marimo" inside it would
+        # produce "marimo[sql]-r".
+        name, bracket, rest = dep.partition("[")
+        joined = ",".join(features)
+        if bracket:
+            return f"{name}[{joined},{rest}"
+        # Split off any version specifier so features land before it.
+        match = re.match(r"^([^=<>~!\s]+)(.*)$", dep)
+        if not match:
+            return dep
+        return f"{match.group(1)}[{joined}]{match.group(2)}"
 
     # Find all marimo dependencies
     marimo_deps = [d for d in dependencies if is_marimo_dependency(d)]
     if not marimo_deps:
-        if is_editable("marimo"):
+        if is_editable(DISTRIBUTION_NAME):
             LOGGER.info("Using editable of marimo for sandbox")
             return dependencies + [f"-e {get_marimo_dir()}"]
 
         return dependencies + [
-            include_features(f"marimo=={marimo_version}", additional_features)
+            include_features(
+                f"{DISTRIBUTION_NAME}=={marimo_version}", additional_features
+            )
         ]
 
     # Prefer the one with brackets if it exists
@@ -171,15 +181,40 @@ def _normalize_sandbox_dependencies(
     # Remove all marimo deps
     filtered = [d for d in dependencies if not is_marimo_dependency(d)]
 
-    if is_editable("marimo"):
+    if is_editable(DISTRIBUTION_NAME):
         LOGGER.info("Using editable of marimo for sandbox")
         return filtered + [f"-e {get_marimo_dir()}"]
+
+    chosen = _retarget_to_this_distribution(chosen, marimo_version)
 
     # Add version if not already versioned
     if not _is_versioned(chosen):
         chosen = f"{chosen}=={marimo_version}"
 
     return filtered + [include_features(chosen, additional_features)]
+
+
+def _retarget_to_this_distribution(dependency: str, version: str) -> str:
+    """Point an upstream marimo requirement at this fork's distribution.
+
+    A notebook written against upstream carries `marimo==0.14.0` in its script
+    metadata. Left alone, its sandbox would install upstream marimo — losing R
+    support, and conflicting with this package, since both own the `marimo`
+    import name. The upstream version is dropped rather than translated: it
+    does not exist for this distribution.
+
+    >>> _retarget_to_this_distribution("marimo==0.14.0", "0.23.16.1")
+    'marimo-r==0.23.16.1'
+    >>> _retarget_to_this_distribution("marimo[sql]", "0.23.16.1")
+    'marimo-r[sql]==0.23.16.1'
+    >>> _retarget_to_this_distribution("marimo-r[sql]==1.2.3", "0.23.16.1")
+    'marimo-r[sql]==1.2.3'
+    """
+    name_and_extras = re.split(r"[=<>~!]+", dependency)[0].strip()
+    name, bracket, extras = name_and_extras.partition("[")
+    if name == DISTRIBUTION_NAME:
+        return dependency
+    return f"{DISTRIBUTION_NAME}{bracket}{extras}=={version}"
 
 
 def _resolve_local_path_line(line: str, script_dir: Path) -> str:

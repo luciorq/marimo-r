@@ -16,7 +16,7 @@ export function isKnownCellDocumentUri(uri: string): boolean {
   return store.get(cellIdsAtom).inOrderIds.includes(CellDocumentUri.parse(uri));
 }
 
-export function getLspRootUri() {
+export function getLspRootUri(_language = "python") {
   const lspWorkspace = store.get(lspWorkspaceAtom);
   // The backend provides rootUri for active notebook sessions.
   // For non-notebook pages (home, gallery), lspWorkspace is null,
@@ -31,10 +31,24 @@ export function getLspWorkspaceFolders() {
   return rootUri ? [{ uri: rootUri, name: "marimo" }] : [];
 }
 
-export function getLspDocumentUri() {
+export function getLspDocumentUri(language = "python") {
   const lspWorkspace = store.get(lspWorkspaceAtom);
   // The backend provides documentUri for active notebook sessions.
   // For non-notebook pages (home, gallery), lspWorkspace is null,
   // so return a valid file URI fallback.
-  return lspWorkspace?.documentUri ?? "file:///__marimo_notebook__.py";
+  const expectedSuffix = language === "r" ? ".r" : ".py";
+  const documentUri = lspWorkspace?.documentUri;
+  if (!documentUri) {
+    return `file:///__marimo_notebook__${expectedSuffix}`;
+  }
+
+  if (documentUri.endsWith(expectedSuffix)) {
+    return documentUri;
+  }
+
+  if (documentUri.endsWith(".py") || documentUri.endsWith(".r")) {
+    return `${documentUri.slice(0, -3)}${expectedSuffix}`;
+  }
+
+  return documentUri;
 }

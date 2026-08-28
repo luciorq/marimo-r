@@ -66,7 +66,7 @@ from marimo._tutorials import (
 from marimo._utils.http import HTTPException, HTTPStatus
 from marimo._utils.marimo_path import MarimoPath, create_temp_notebook_file
 from marimo._utils.platform import is_windows
-from marimo._version import __version__
+from marimo._version import DISTRIBUTION_NAME, __version__
 
 
 def helpful_usage_error(self: Any, file: Any = None) -> None:
@@ -171,7 +171,12 @@ except Exception:
         "show_default": True,
     },
 )
-@click.version_option(version=__version__, message="%(version)s")
+# Reports the distribution too. This fork tracks upstream's version exactly,
+# so the number alone cannot tell you which of the two you are running — and
+# that matters in a bug report.
+@click.version_option(
+    version=__version__, message=f"%(version)s ({DISTRIBUTION_NAME})"
+)
 @click.option(
     "-l",
     "--log-level",

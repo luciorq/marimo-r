@@ -26,6 +26,7 @@ from marimo._runtime.commands import (
     InvokeFunctionCommand,
     ModelCommand,
     RenameNotebookCommand,
+    ResetRSessionCommand,
     StopKernelCommand,
     SyncGraphCommand,
     UpdateCellConfigCommand,
@@ -71,6 +72,7 @@ class KernelRequestHandlers:
         router.register(ModelCommand, self._handle_receive_model_message)
         router.register(UpdateUserConfigCommand, self._handle_set_user_config)
         router.register(StopKernelCommand, self._handle_stop)
+        router.register(ResetRSessionCommand, self._handle_reset_r_session)
 
     async def _handle_instantiate(
         self, request: CreateNotebookCommand
@@ -182,6 +184,14 @@ class KernelRequestHandlers:
         self, request: UpdateUserConfigCommand
     ) -> None:
         self._kernel.set_user_config(request)
+
+    async def _handle_reset_r_session(
+        self, request: ResetRSessionCommand
+    ) -> None:
+        del request
+        from marimo._r.session import reset_session
+
+        reset_session()
 
     async def _handle_stop(self, request: StopKernelCommand) -> None:
         del request

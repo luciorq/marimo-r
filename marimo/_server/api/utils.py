@@ -228,10 +228,22 @@ def get_code_mode_credentials(
     return server_url, auth_token
 
 
+def _has_gui() -> bool:
+    if sys.platform in ("win32", "cygwin"):
+        return True
+    return bool(
+        os.getenv("DISPLAY")
+        or os.getenv("WAYLAND_DISPLAY")
+        or os.getenv("MIR_SOCKET")
+    )
+
+
 def open_url_in_browser(browser: str, url: str) -> None:
     """
     Open a browser to the given URL.
     """
+    if browser == "default" and not _has_gui():
+        return
     if which("xdg-open") is not None and browser == "default":
         if (
             sys.platform == "win32"

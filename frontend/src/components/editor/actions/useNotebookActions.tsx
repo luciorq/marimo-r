@@ -134,7 +134,8 @@ export function useNotebookActions({
   const { handleClick: openSettings } = useOpenSettingsToTab();
   const setKeyboardShortcutsOpen = useSetAtom(keyboardShortcutsAtom);
   const setExportOptions = useSetAtom(exportOptionsAtom);
-  const { readCode, saveCellConfig } = useRequestClient();
+  const { readCode,
+    resetRSession, saveCellConfig } = useRequestClient();
 
   const hasDisabledCells = useAtomValue(hasDisabledCellsAtom);
   const canUndoDeletes = useAtomValue(canUndoDeletesAtom);
@@ -482,6 +483,15 @@ export function useNotebookActions({
       variant: "danger",
       handle: restartKernel,
       additionalKeywords: ["reset", "reload", "restart"],
+    },
+    {
+      divider: true,
+      icon: <PowerSquareIcon size={14} strokeWidth={1.5} />,
+      label: "Reset R session",
+      variant: "danger",
+      handle: async () => {
+        await resetRSession();
+      },
     },
     {
       icon: <FastForwardIcon size={14} strokeWidth={1.5} />,

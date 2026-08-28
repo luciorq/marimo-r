@@ -327,6 +327,7 @@ class KernelCapabilitiesNotification(msgspec.Struct):
         pylsp: Python Language Server Protocol installed.
         ty: ty type checker installed.
         basedpyright: basedpyright type checker installed.
+        r_lsp: R language server available.
     """
 
     terminal: bool = False
@@ -335,6 +336,8 @@ class KernelCapabilitiesNotification(msgspec.Struct):
     basedpyright: bool = False
     pyrefly: bool = False
 
+    r_lsp: bool = False
+
     def __post_init__(self) -> None:
         # Only available in mac/linux
         self.terminal = not is_windows() and not is_pyodide()
@@ -342,6 +345,19 @@ class KernelCapabilitiesNotification(msgspec.Struct):
         self.basedpyright = DependencyManager.basedpyright.has()
         self.ty = DependencyManager.ty.has()
         self.pyrefly = DependencyManager.pyrefly.has()
+        has_node = bool(DependencyManager.which("node"))
+        # Resolved through find_r_tool, not `which`: the R toolchain lives in
+        # the pixi `r` environment, which is not on this process's PATH. Using
+        # `which` here made the frontend refuse to attach the LSP client
+        # (see languages/r.ts, which gates on this capability) even though the
+        # server had started successfully against the pixi R.
+        from marimo._r.launcher import find_r_tool
+
+        # Not air: it formats R cells but is not a language server backend, so
+        # its presence alone does not mean there is an LSP to attach to.
+        self.r_lsp = has_node and any(
+            find_r_tool(tool) for tool in ("R", "jarl")
+        )
 
 
 class ConsumerCapabilities(msgspec.Struct, frozen=True):
