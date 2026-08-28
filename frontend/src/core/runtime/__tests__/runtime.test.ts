@@ -341,6 +341,14 @@ describe("RuntimeManager", () => {
       expect(url.searchParams.get("access_token")).toBeNull();
       expect(url.search).toBe("");
     });
+
+    it("should return r URL", () => {
+      const runtime = new RuntimeManager(mockConfig);
+      const url = runtime.getLSPURL("r");
+
+      expect(url.protocol).toBe("wss:");
+      expect(url.pathname).toBe("/lsp/r");
+    });
   });
 
   describe("getAiURL", () => {

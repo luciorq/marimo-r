@@ -45,6 +45,38 @@ describe("parseTypedCommand", () => {
     expect(result).toEqual(["/path/with spaces/ty", "server"]);
   });
 
+  it("should parse jarl commands correctly", () => {
+    const result = parseTypedCommand("jarl:/path/to/jarl");
+    expect(result).toEqual(["/path/to/jarl", "server"]);
+  });
+
+  it("should parse air commands correctly", () => {
+    const result = parseTypedCommand("air:/path/to/air");
+    expect(result).toEqual(["/path/to/air", "language-server"]);
+  });
+
+  it("should parse languageserver commands correctly", () => {
+    const result = parseTypedCommand("languageserver:R");
+    expect(result).toEqual([
+      "R",
+      "--vanilla",
+      "--slave",
+      "-e",
+      "languageserver::run()",
+    ]);
+  });
+
+  it("should parse languageserver commands with full path", () => {
+    const result = parseTypedCommand("languageserver:/usr/bin/R");
+    expect(result).toEqual([
+      "/usr/bin/R",
+      "--vanilla",
+      "--slave",
+      "-e",
+      "languageserver::run()",
+    ]);
+  });
+
   it("should fallback to old format for commands without colon", () => {
     const result = parseTypedCommand("node /path/to/binary --stdio");
     expect(result).toEqual(["node", "/path/to/binary", "--stdio"]);

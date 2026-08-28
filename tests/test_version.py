@@ -10,10 +10,29 @@ if TYPE_CHECKING:
     import pytest
 
 
-def test_get_version_from_marimo(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_get_version_from_this_distribution(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """This fork ships as marimo-r, so that is tried first."""
+
     def get_version(distribution: str) -> str:
-        assert distribution == "marimo"
+        assert distribution == _version.DISTRIBUTION_NAME == "marimo-r"
         return "1.2.3"
+
+    monkeypatch.setattr(_version, "version", get_version)
+
+    assert _version._get_version() == "1.2.3"
+
+
+def test_get_version_from_upstream_marimo(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Running this source tree without the rename still reports a version."""
+
+    def get_version(distribution: str) -> str:
+        if distribution == "marimo":
+            return "1.2.3"
+        raise PackageNotFoundError(distribution)
 
     monkeypatch.setattr(_version, "version", get_version)
 

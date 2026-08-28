@@ -65,6 +65,7 @@ persistent_cache
 plain
 plain_text
 query_params
+r
 redirect_stderr
 redirect_stdout
 refs

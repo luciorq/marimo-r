@@ -370,13 +370,14 @@ def test_composite_server():
     with mock.patch("marimo._server.lsp.DependencyManager") as mock_dm:
         mock_dm.pylsp = mock.MagicMock()
         mock_dm.pylsp.has.return_value = True
-        total_lsp_servers = 5
+        total_lsp_servers = len(CompositeLspServer.LANGUAGE_SERVERS)
         config = LanguageServersConfig(
             {
                 "pylsp": {"enabled": True},
                 "ty": {"enabled": True},
                 "pyrefly": {"enabled": True},
                 "basedpyright": {"enabled": True},
+                "r": {"enabled": False},
             }
         )
         completion_config = CompletionConfig(
@@ -397,9 +398,12 @@ def test_composite_server():
         assert server._is_enabled(config, "ty") is True
         assert server._is_enabled(config, "pyrefly") is True
         assert server._is_enabled(config, "basedpyright") is True
+        assert server._is_enabled(config, "r") is False
 
         # Test with only pylsp
-        config = LanguageServersConfig({"pylsp": {"enabled": True}})
+        config = LanguageServersConfig(
+            {"pylsp": {"enabled": True}, "r": {"enabled": False}}
+        )
         completion_config = CompletionConfig(
             {
                 "copilot": False,
@@ -415,6 +419,7 @@ def test_composite_server():
         assert server._is_enabled(config, "copilot") is False
         assert server._is_enabled(config, "ty") is False
         assert server._is_enabled(config, "pyrefly") is False
+        assert server._is_enabled(config, "r") is False
 
         # Test with only ty enabled
         config = LanguageServersConfig(
@@ -423,6 +428,7 @@ def test_composite_server():
                 "pylsp": {"enabled": False},
                 "basedpyright": {"enabled": False},
                 "pyrefly": {"enabled": False},
+                "r": {"enabled": False},
             }
         )
         completion_config = CompletionConfig(
@@ -441,6 +447,7 @@ def test_composite_server():
         assert server._is_enabled(config, "copilot") is False
         assert server._is_enabled(config, "ty") is True
         assert server._is_enabled(config, "pyrefly") is False
+        assert server._is_enabled(config, "r") is False
 
         # Test with only basedpyright enabled
         config = LanguageServersConfig(
@@ -449,6 +456,7 @@ def test_composite_server():
                 "pylsp": {"enabled": False},
                 "ty": {"enabled": False},
                 "pyrefly": {"enabled": False},
+                "r": {"enabled": False},
             }
         )
         completion_config = CompletionConfig(
@@ -467,6 +475,7 @@ def test_composite_server():
         assert server._is_enabled(config, "copilot") is False
         assert server._is_enabled(config, "ty") is False
         assert server._is_enabled(config, "pyrefly") is False
+        assert server._is_enabled(config, "r") is False
 
         # Test with only pyrefly enabled
         config = LanguageServersConfig(
@@ -475,6 +484,7 @@ def test_composite_server():
                 "pylsp": {"enabled": False},
                 "basedpyright": {"enabled": False},
                 "ty": {"enabled": False},
+                "r": {"enabled": False},
             }
         )
         completion_config = CompletionConfig(
@@ -493,9 +503,12 @@ def test_composite_server():
         assert server._is_enabled(config, "copilot") is False
         assert server._is_enabled(config, "ty") is False
         assert server._is_enabled(config, "pyrefly") is True
+        assert server._is_enabled(config, "r") is False
 
         # Test with nothing enabled
-        config = LanguageServersConfig({"pylsp": {"enabled": False}})
+        config = LanguageServersConfig(
+            {"pylsp": {"enabled": False}, "r": {"enabled": False}}
+        )
         completion_config = CompletionConfig(
             {
                 "copilot": False,
@@ -510,6 +523,7 @@ def test_composite_server():
         assert server._is_enabled(config, "pylsp") is False
         assert server._is_enabled(config, "copilot") is False
         assert server._is_enabled(config, "ty") is False
+        assert server._is_enabled(config, "r") is False
 
 
 def test_basedpyright_server_uses_typed_format():
@@ -640,7 +654,10 @@ def test_any_lsp_server_running():
                 "activate_on_typing": True,
                 "signature_hint_on_typing": False,
             },
-            "language_servers": {"pylsp": {"enabled": False}},
+            "language_servers": {
+                "pylsp": {"enabled": False},
+                "r": {"enabled": False},
+            },
         }
     )
     assert any_lsp_server_running(config) is False
@@ -652,7 +669,7 @@ def test_any_lsp_server_running():
                 "activate_on_typing": True,
                 "signature_hint_on_typing": False,
             },
-            "language_servers": {},  # default is false
+            "language_servers": {"r": {"enabled": False}},
         }
     )
     assert any_lsp_server_running(config) is False
@@ -664,7 +681,7 @@ def test_any_lsp_server_running():
                 "activate_on_typing": True,
                 "signature_hint_on_typing": True,
             },
-            "language_servers": {},  # default is false
+            "language_servers": {"r": {"enabled": False}},
         }
     )
     assert any_lsp_server_running(config) is False

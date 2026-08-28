@@ -18,7 +18,13 @@ import { requestClientAtom } from "@/core/network/requests";
 import type { MarimoConfig } from "@/core/network/types";
 import { store } from "@/core/state/jotai";
 import { type CodemirrorCellActions, cellActionsState } from "../cells/state";
-import { cellIdState } from "../config/extension";
+import {
+  cellIdState,
+  completionConfigState,
+  hotkeysProviderState,
+  lspConfigState,
+  placeholderState,
+} from "../config/extension";
 import { formatAll, formatEditorViews, formatSQL } from "../format";
 import {
   adaptiveLanguageConfiguration,
@@ -48,23 +54,29 @@ const updateCellCode = vi.fn();
 const createdViews: EditorView[] = [];
 
 function createEditor(content: string, cellId: CellId) {
+  const completionConfig = {
+    activate_on_typing: true,
+    signature_hint_on_typing: false,
+    copilot: false,
+    codeium_api_key: null,
+  };
+  const hotkeys = new OverridingHotkeyProvider({});
   const state = EditorState.create({
     doc: content,
     extensions: [
       python(),
       adaptiveLanguageConfiguration({
         cellId,
-        completionConfig: {
-          activate_on_typing: true,
-          signature_hint_on_typing: false,
-          copilot: false,
-          codeium_api_key: null,
-        },
-        hotkeys: new OverridingHotkeyProvider({}),
+        completionConfig,
+        hotkeys,
         placeholderType: "marimo-import",
         lspConfig: {},
       }),
       cellIdState.of(cellId),
+      completionConfigState.of(completionConfig),
+      hotkeysProviderState.of(hotkeys),
+      placeholderState.of("marimo-import"),
+      lspConfigState.of({ diagnostics: { enabled: false } }),
       cellActionsState.of({
         updateCellCode,
       } as unknown as CodemirrorCellActions),
@@ -127,6 +139,7 @@ describe("format", () => {
           [cid2]: "import pandas as    pd",
         },
         lineLength: 88,
+        languages: {},
       });
 
       expect(views[cid1].state.doc.toString()).toBe(formattedCode1);
@@ -193,6 +206,7 @@ describe("format", () => {
           [cid2]: "import pandas as    pd",
         },
         lineLength: 88,
+        languages: {},
       });
 
       expect(updateCellCode).toHaveBeenCalledWith({
@@ -238,6 +252,160 @@ describe("format", () => {
       expect(editor.state.doc.toString()).toBe(
         "SELECT * FROM table WHERE id = 1",
       );
+      expect(updateCellCode).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("formatR", () => {
+    it("should send raw R code and languages map for R cells", async () => {
+      const cellId = "1" as CellId;
+      const rawRCode = "x  <-   1";
+      const view = createEditor(rawRCode, cellId);
+      switchLanguage(view, { language: "r" });
+
+      const formattedRCode = "x <- 1";
+
+      mockRequestClient.sendFormat.mockResolvedValueOnce({
+        codes: {
+          [cellId]: formattedRCode,
+        },
+      });
+
+      vi.mocked(getResolvedMarimoConfig).mockReturnValueOnce(mockConfig);
+
+      await formatEditorViews({ [cellId]: view });
+
+      // Should send raw R code (not Python-wrapped) with languages map
+      expect(mockRequestClient.sendFormat).toHaveBeenCalledWith({
+        codes: {
+          [cellId]: rawRCode,
+        },
+        lineLength: 88,
+        languages: {
+          [cellId]: "r",
+        },
+      });
+    });
+
+    it("should apply formatted R code to editor via replaceEditorContent", async () => {
+      const cellId = "1" as CellId;
+      const rawRCode = "x  <-   1";
+      const view = createEditor(rawRCode, cellId);
+      switchLanguage(view, { language: "r" });
+
+      const formattedRCode = "x <- 1";
+
+      mockRequestClient.sendFormat.mockResolvedValueOnce({
+        codes: {
+          [cellId]: formattedRCode,
+        },
+      });
+
+      vi.mocked(getResolvedMarimoConfig).mockReturnValueOnce(mockConfig);
+
+      await formatEditorViews({ [cellId]: view });
+
+      // Editor should show raw formatted R code
+      expect(view.state.doc.toString()).toBe(formattedRCode);
+    });
+
+    it("should update notebook state with Python-wrapped code via transformOut", async () => {
+      const cellId = "1" as CellId;
+      const rawRCode = "x  <-   1";
+      const view = createEditor(rawRCode, cellId);
+      switchLanguage(view, { language: "r" });
+
+      const formattedRCode = "x <- 1";
+
+      mockRequestClient.sendFormat.mockResolvedValueOnce({
+        codes: {
+          [cellId]: formattedRCode,
+        },
+      });
+
+      vi.mocked(getResolvedMarimoConfig).mockReturnValueOnce(mockConfig);
+
+      await formatEditorViews({ [cellId]: view });
+
+      // Notebook state should get the Python-wrapped version
+      expect(updateCellCode).toHaveBeenCalledWith({
+        cellId,
+        code: '_r_output = mo.r("""\nx <- 1\n""")',
+        formattingChange: true,
+      });
+    });
+
+    it("should handle mixed Python and R cells correctly", async () => {
+      const pyCellId = "1" as CellId;
+      const rCellId = "2" as CellId;
+
+      const pyView = createEditor("import numpy as    np", pyCellId);
+      const rView = createEditor("x  <-   1", rCellId);
+      switchLanguage(rView, { language: "r" });
+
+      mockRequestClient.sendFormat.mockResolvedValueOnce({
+        codes: {
+          [pyCellId]: "import numpy as np",
+          [rCellId]: "x <- 1",
+        },
+      });
+
+      vi.mocked(getResolvedMarimoConfig).mockReturnValueOnce(mockConfig);
+
+      await formatEditorViews({
+        [pyCellId]: pyView,
+        [rCellId]: rView,
+      });
+
+      // Python cell sends getEditorCodeAsPython, R cell sends raw code
+      // languages map only includes R cells
+      expect(mockRequestClient.sendFormat).toHaveBeenCalledWith({
+        codes: {
+          [pyCellId]: "import numpy as    np",
+          [rCellId]: "x  <-   1",
+        },
+        lineLength: 88,
+        languages: {
+          [rCellId]: "r",
+        },
+      });
+
+      // Python cell updated via updateCellCode with formatted code
+      expect(updateCellCode).toHaveBeenCalledWith({
+        cellId: pyCellId,
+        code: "import numpy as np",
+        formattingChange: true,
+      });
+
+      // R cell updated via updateCellCode with Python-wrapped code
+      expect(updateCellCode).toHaveBeenCalledWith({
+        cellId: rCellId,
+        code: '_r_output = mo.r("""\nx <- 1\n""")',
+        formattingChange: true,
+      });
+
+      // Both editors show their formatted code
+      expect(pyView.state.doc.toString()).toBe("import numpy as np");
+      expect(rView.state.doc.toString()).toBe("x <- 1");
+    });
+
+    it("should not update R cell if formatted code is same as original", async () => {
+      const cellId = "1" as CellId;
+      const rawRCode = "x <- 1";
+      const view = createEditor(rawRCode, cellId);
+      switchLanguage(view, { language: "r" });
+
+      mockRequestClient.sendFormat.mockResolvedValueOnce({
+        codes: {
+          [cellId]: rawRCode,
+        },
+      });
+
+      vi.mocked(getResolvedMarimoConfig).mockReturnValueOnce(mockConfig);
+
+      await formatEditorViews({ [cellId]: view });
+
+      expect(view.state.doc.toString()).toBe(rawRCode);
       expect(updateCellCode).not.toHaveBeenCalled();
     });
   });
