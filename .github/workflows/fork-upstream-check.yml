@@ -1,0 +1,91 @@
+name: 🔄 Upstream release check
+
+# Fork-only workflow. Watches marimo-team/marimo for new release tags and opens
+# a tracking issue when this fork's R patch series needs to be rebased.
+# See FORK.md.
+
+on:
+  schedule:
+    - cron: "0 7 * * 1" # Mondays, 07:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Check for a new upstream release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          fetch-depth: 0
+
+      - name: Add upstream remote
+        run: git remote add upstream https://github.com/marimo-team/marimo.git
+
+      - name: Check whether we are behind upstream
+        id: check
+        run: |
+          set -o pipefail
+          if scripts/fork/sync-upstream.sh check | tee check.txt; then
+            echo "behind=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "behind=true" >> "$GITHUB_OUTPUT"
+          fi
+          echo "tag=$(git tag --list --sort=-v:refname '[0-9]*.[0-9]*.[0-9]*' | head -n 1)" >> "$GITHUB_OUTPUT"
+
+      - name: Summary
+        run: |
+          {
+            echo '```'
+            cat check.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Open a tracking issue
+        if: steps.check.outputs.behind == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.check.outputs.tag }}
+        run: |
+          title="Rebase R support onto upstream $TAG"
+
+          existing=$(gh issue list --state open --label upstream-sync \
+            --json number,title --jq "map(select(.title == \"$title\")) | .[0].number")
+          if [ -n "$existing" ]; then
+            echo "Issue #$existing already tracks $TAG"
+            exit 0
+          fi
+
+          gh label create upstream-sync \
+            --description "Tracks rebasing the R patch series onto a new upstream release" \
+            --color 1D76DB 2>/dev/null || true
+
+          {
+            echo "Upstream marimo released \`$TAG\`. This fork's R patch series needs to be rebased."
+            echo
+            echo '```'
+            cat check.txt
+            echo '```'
+            echo
+            echo "To sync:"
+            echo
+            echo '```bash'
+            echo "scripts/fork/sync-upstream.sh rebase $TAG"
+            echo '```'
+            echo
+            echo "Conflict guidance lives in \`docs/development/r_support.md\`; the branch"
+            echo "and tag model is in \`FORK.md\`."
+            echo
+            echo "_Opened automatically by \`.github/workflows/fork-upstream-check.yml\`._"
+          } > issue-body.md
+
+          gh issue create --title "$title" --body-file issue-body.md --label upstream-sync
