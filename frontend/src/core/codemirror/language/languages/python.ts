@@ -149,6 +149,8 @@ const pylspClient = once((lspConfig: LSPConfig) => {
       ...lspClientOpts,
     }),
     settings,
+    undefined,
+    "python",
   );
 
   // Set the resync callback now that the client exists
@@ -179,6 +181,8 @@ const tyLspClient = once((_: LSPConfig) => {
       getWorkspaceConfiguration: (_) => [{ disableLanguageServices: true }],
     }),
     {},
+    undefined,
+    "python",
   );
 
   // Set the resync callback now that the client exists
@@ -247,6 +251,8 @@ const pyrightClient = once((_: LSPConfig) => {
       ...lspClientOpts,
     }),
     {},
+    undefined,
+    "python",
   );
 
   // Set the resync callback now that the client exists

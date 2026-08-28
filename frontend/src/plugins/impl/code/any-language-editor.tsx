@@ -22,6 +22,7 @@ export const LANGUAGE_MAP: Record<string, LanguageName | undefined> = {
   typescript: "ts",
   shell: "sh",
   bash: "sh",
+  r: "r",
   // Other fallbacks
   unknown: "text",
   undefined: "text",

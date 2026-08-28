@@ -9,9 +9,10 @@ import { normalizeName } from "@/core/cells/names";
 import { type ConnectionName, DUCKDB_ENGINE } from "@/core/datasets/engines";
 import { useAutoGrowInputProps } from "@/hooks/useAutoGrowInputProps";
 import { cellIdState } from "../../cells/state";
-import { formatSQL } from "../../format";
+import { formatR, formatSQL } from "../../format";
 import { languageAdapterState } from "../extension";
 import { MarkdownLanguageAdapter } from "../languages/markdown";
+import { RLanguageAdapter } from "../languages/r";
 import {
   SQLLanguageAdapter,
   updateSQLDialectFromConnection,
@@ -23,6 +24,7 @@ import {
 } from "../metadata";
 import type { LanguageMetadataOf } from "../types";
 import { getQuotePrefix, MarkdownQuotePrefixTooltip } from "./markdown";
+import { RPlotSettings } from "./r";
 import { SQLEngineSelect, SQLModeSelect } from "./sql";
 
 const Divider = () => <div className="h-4 border-r border-border" />;
@@ -185,6 +187,122 @@ export const LanguagePanelComponent: React.FC<{
         <Tooltip content={<MarkdownQuotePrefixTooltip />}>
           <InfoIcon className="w-3 h-3" />
         </Tooltip>
+      </div>
+    );
+  }
+
+  if (languageAdapter instanceof RLanguageAdapter) {
+    type Metadata3 = LanguageMetadataOf<RLanguageAdapter>;
+    const metadata = view.state.field(languageMetadataField) as Metadata3;
+
+    showDivider = true;
+
+    const sanitizeAndTriggerUpdate = (
+      e: React.SyntheticEvent<HTMLInputElement>,
+    ) => {
+      const name = normalizeName(e.currentTarget.value, false);
+      e.currentTarget.value = name;
+
+      triggerUpdate<Metadata3>({
+        outputVar: name,
+      });
+    };
+
+    const updateInputs = (e: React.SyntheticEvent<HTMLInputElement>) => {
+      triggerUpdate<Metadata3>({
+        inputs: e.currentTarget.value.trim(),
+      });
+    };
+
+    actions = (
+      <div className="flex flex-1 gap-2 items-center">
+        <label className="flex gap-2 items-center">
+          <span className="select-none">Output variable: </span>
+          <input
+            {...inputProps}
+            defaultValue={metadata.outputVar}
+            onChange={(e) => {
+              inputProps.onChange?.(e);
+            }}
+            onBlur={sanitizeAndTriggerUpdate}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && e.shiftKey) {
+                sanitizeAndTriggerUpdate(e);
+              }
+            }}
+            className="min-w-14 w-auto border border-border rounded px-1 focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring"
+          />
+          <span {...spanProps} />
+        </label>
+        <Divider />
+        <label className="flex gap-2 items-center">
+          <span className="select-none">Inputs: </span>
+          <input
+            defaultValue={metadata.inputs}
+            placeholder='{"name": var}'
+            onBlur={updateInputs}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && e.shiftKey) {
+                updateInputs(e);
+              }
+            }}
+            className="min-w-20 w-auto border border-border rounded px-1 text-xs font-mono focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring"
+          />
+        </label>
+        <div className="flex items-center gap-2 ml-auto">
+          <Tooltip content="Format R">
+            <Button
+              variant="text"
+              size="icon"
+              onClick={async () => {
+                await formatR(view);
+              }}
+            >
+              <PaintRollerIcon className="h-3 w-3" />
+            </Button>
+          </Tooltip>
+          <Divider />
+          <label className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              onChange={(e) => {
+                triggerUpdate<Metadata3>({
+                  showOutput: !e.target.checked,
+                });
+              }}
+              checked={!metadata.showOutput}
+            />
+            <span className="select-none">Hide output</span>
+          </label>
+          <label className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              onChange={(e) => {
+                triggerUpdate<Metadata3>({
+                  capture: e.target.checked,
+                });
+              }}
+              checked={metadata.capture}
+            />
+            <span className="select-none">Capture output</span>
+          </label>
+          <label className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              onChange={(e) => {
+                triggerUpdate<Metadata3>({
+                  plot: e.target.checked,
+                });
+              }}
+              checked={metadata.plot}
+            />
+            <span className="select-none">Show plot</span>
+          </label>
+          <RPlotSettings
+            metadata={metadata}
+            onUpdate={(update) => triggerUpdate<Metadata3>(update)}
+          />
+        </div>
       </div>
     );
   }

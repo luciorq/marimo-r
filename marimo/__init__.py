@@ -88,6 +88,7 @@ __all__ = [  # noqa: RUF022
     "running_in_notebook",
     "show_code",
     "sidebar",
+    "r",
     "sql",
     "stat",
     "state",
@@ -138,6 +139,7 @@ from marimo._plugins.stateless.style import style
 from marimo._plugins.stateless.tabs import tabs
 from marimo._plugins.stateless.tree import tree
 from marimo._plugins.stateless.video import video
+from marimo._r.r import r
 from marimo._runtime import output, watch
 from marimo._runtime.app_meta import AppMeta
 from marimo._runtime.capture import (

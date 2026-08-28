@@ -935,6 +935,10 @@ class ClearCacheCommand(Command):
     """
 
 
+class ResetRSessionCommand(Command):
+    """Reset the R session for the current kernel."""
+
+
 class GetCacheInfoCommand(Command):
     """Retrieve cache statistics.
 
@@ -980,6 +984,7 @@ CommandMessage = (
     | RefreshSecretsCommand
     # Cache management
     | ClearCacheCommand
+    | ResetRSessionCommand
     | GetCacheInfoCommand
     # Kernel operations
     | StopKernelCommand

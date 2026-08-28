@@ -69,6 +69,14 @@ export function createNetworkRequests(): EditRequests & RunRequests {
         })
         .then(handleResponseReturnNull);
     },
+    resetRSession: () => {
+      const runtimeManager = getRuntimeManager();
+      return API.post(
+        "/kernel/reset_r_session",
+        {},
+        { headers: runtimeManager.headers() },
+      ).then(() => null);
+    },
     sendDocumentTransaction: async (request) => {
       await waitForConnectionOpen();
       return getClient()

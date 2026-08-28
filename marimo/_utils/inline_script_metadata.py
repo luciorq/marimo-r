@@ -210,10 +210,22 @@ def _pyproject_toml_to_requirements_txt(
 
 
 def is_marimo_dependency(dependency: str) -> bool:
+    """Whether a requirement refers to marimo, in any distribution.
+
+    Matches both this fork's distribution and upstream's, because a notebook
+    written against upstream carries `marimo==...` in its script metadata and
+    must be *rewritten* rather than added to: the two distributions own the
+    same import package and cannot be installed together.
+    """
+    from marimo._version import DISTRIBUTION_NAME
+
     # Split on any version specifier
-    without_version = re.split(r"[=<>~]+", dependency)[0]
-    # Match marimo and marimo[extras], but not marimo-<something-else>
-    return without_version == "marimo" or without_version.startswith("marimo[")
+    without_version = re.split(r"[=<>~]+", dependency)[0].strip()
+    # Match `<name>` and `<name>[extras]`, but not `marimo-<something-else>`.
+    return any(
+        without_version == name or without_version.startswith(f"{name}[")
+        for name in (DISTRIBUTION_NAME, "marimo")
+    )
 
 
 def _normalize_pep503(name: str) -> str:

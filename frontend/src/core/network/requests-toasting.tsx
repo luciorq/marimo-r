@@ -22,6 +22,7 @@ export function createErrorToastingRequests(
     sendFunctionRequest: "Failed to send function request",
     sendRestart: "Failed to restart",
     sendDocumentTransaction: "Failed to sync document transaction",
+    resetRSession: "Failed to reset R session",
     sendRun: "Failed to run",
     sendRunScratchpad: "Failed to run scratchpad",
     sendRename: "Failed to rename",

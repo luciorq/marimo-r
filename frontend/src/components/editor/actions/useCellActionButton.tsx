@@ -58,7 +58,7 @@ import type { CellConfig, RuntimeState } from "@/core/network/types";
 import { canLinkToCell, createCellLink } from "@/utils/cell-urls";
 import { copyToClipboard } from "@/utils/copy";
 import { downloadCellOutputAsImage } from "@/utils/download";
-import { MarkdownIcon, PythonIcon } from "../cell/code/icons";
+import { MarkdownIcon, PythonIcon, RIcon } from "../cell/code/icons";
 import { useDeleteCellCallback } from "../cell/useDeleteCell";
 import { useRunCell } from "../cell/useRunCells";
 import { useSplitCellCallback } from "../cell/useSplitCell";
@@ -275,6 +275,25 @@ export function useCellActionButtons({ cell, closePopover }: Props) {
             },
             hidden: isSetupCell,
           },
+      {
+        icon: <RIcon />,
+        label: "Convert to R",
+        handle: () => {
+          const editorView = getEditorView();
+          if (!editorView) {
+            return;
+          }
+          maybeAddMarimoImport({
+            autoInstantiate,
+            createNewCell: createCell,
+          });
+          switchLanguage(editorView, {
+            language: "r",
+            keepCodeAsIs: false,
+          });
+        },
+        hidden: isSetupCell,
+      },
     ],
 
     // Movement

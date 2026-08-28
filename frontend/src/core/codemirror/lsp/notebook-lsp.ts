@@ -4,6 +4,7 @@ import type { EditorView } from "@codemirror/view";
 import type * as LSP from "vscode-languageserver-protocol";
 import { getNotebook } from "@/core/cells/cells";
 import type { CellId } from "@/core/cells/ids";
+import { connectedDocAtom } from "@/core/codemirror/rtc/extension";
 import { store } from "@/core/state/jotai";
 import { invariant } from "@/utils/invariant";
 import { Logger } from "@/utils/Logger";
@@ -12,10 +13,13 @@ import { Objects } from "@/utils/objects";
 import { isRecord } from "@/utils/records";
 import { getPositionAtWordBounds } from "../completion/hints";
 import { topologicalCodesAtom } from "../copilot/getCodes";
+import { languageAdapterState } from "../language/extension";
+import type { LanguageAdapterType } from "../language/types";
 import {
   getEditorCodeAsPython,
   updateEditorCodeFromPython,
 } from "../language/utils";
+import { replaceEditorContent } from "../replace-editor-content";
 import { createNotebookLens, type NotebookLens } from "./lens";
 import { normalizeLspDocumentation } from "./normalize-markdown-math";
 import {
@@ -193,6 +197,7 @@ export class NotebookLanguageServerClient implements ILanguageServerClient {
     EditorView | null | undefined
   >;
   private readonly initialSettings: Record<string, unknown>;
+  private readonly language: "python" | "r";
   /**
    * Tracks which cell document URIs have been opened with the LSP server.
    * Used to clear diagnostics for cells that no longer have any.
@@ -201,6 +206,10 @@ export class NotebookLanguageServerClient implements ILanguageServerClient {
    * cells that exist in the current notebook snapshot.
    */
   private readonly seenCellDocumentUris = new Set<CellDocumentUri>();
+
+  /** How long an R cell must be idle before we notify save-triggered linters. */
+  private static readonly LINT_SAVE_DEBOUNCE_MS = 400;
+  private lintSaveTimeout: ReturnType<typeof setTimeout> | undefined;
 
   /**
    * Remove cell URIs that are no longer in the notebook.
@@ -233,11 +242,13 @@ export class NotebookLanguageServerClient implements ILanguageServerClient {
       CellId,
       EditorView | null | undefined
     > = defaultGetNotebookEditors,
+    language: "python" | "r" = "python",
   ) {
-    this.documentUri = getLspDocumentUri();
+    this.documentUri = getLspDocumentUri(language);
     this.getNotebookEditors = getNotebookEditors;
     this.initialSettings = initialSettings;
     this.client = client;
+    this.language = language;
     this.patchProcessNotification();
 
     // Handle configuration after initialization
@@ -315,6 +326,10 @@ export class NotebookLanguageServerClient implements ILanguageServerClient {
       isClientWithNotify(this.client),
       "notify is not a method on the client",
     );
+    if (this.language === "r" && !this.hasLanguageCells()) {
+      Logger.debug("[lsp] skipping R resync; no R cells");
+      return;
+    }
     await this.client.initialize();
     await this.client.notify("workspace/didChangeConfiguration", {
       settings: this.initialSettings,
@@ -331,7 +346,7 @@ export class NotebookLanguageServerClient implements ILanguageServerClient {
     if (this.openCellDocumentCounts.size > 0) {
       await this.client.notify("textDocument/didOpen", {
         textDocument: {
-          languageId: "python",
+          languageId: this.language,
           text: lens.mergedText,
           uri: this.documentUri,
           version: version,
@@ -343,7 +358,52 @@ export class NotebookLanguageServerClient implements ILanguageServerClient {
   }
 
   private getNotebookCode() {
-    return store.get(topologicalCodesAtom);
+    const snapshot = store.get(topologicalCodesAtom);
+    if (this.language !== "r") {
+      return snapshot;
+    }
+
+    // For R cells, we need the raw R code (what the user sees in the editor),
+    // not the Python-wrapped form (e.g. `mo.r("""...""")`).
+    // The topologicalCodesAtom uses getEditorCodeAsPython() which wraps R code
+    // in Python syntax. The R LSP server cannot parse Python, so we read
+    // the raw editor text directly.
+    const { cellIds } = snapshot;
+    const editors = this.getNotebookEditors();
+    const filteredCellIds = cellIds.filter((cellId) => this.isRCell(cellId));
+    const filteredCodes = Object.fromEntries(
+      filteredCellIds.map((cellId) => {
+        const editor = editors[cellId];
+        const rawCode = editor?.state.doc.toString() ?? "";
+        return [cellId, rawCode];
+      }),
+    ) as Record<CellId, string>;
+
+    return { cellIds: filteredCellIds, codes: filteredCodes };
+  }
+
+  private hasLanguageCells(): boolean {
+    return this.getNotebookCode().cellIds.length > 0;
+  }
+
+  private isRCell(cellId: CellId): boolean {
+    const editors = this.getNotebookEditors();
+    const editor = editors[cellId];
+    const adapter = editor?.state.field(languageAdapterState, false);
+    if (adapter?.type) {
+      return adapter.type === "r";
+    }
+
+    const rtcDoc = store.get(connectedDocAtom);
+    if (rtcDoc && rtcDoc !== "disabled") {
+      const langType = rtcDoc.getByPath(`languages/${cellId}`);
+      const langValue = langType?.toString?.() as
+        | LanguageAdapterType
+        | undefined;
+      return langValue === "r";
+    }
+
+    return false;
   }
 
   private assertCellDocumentUri(
@@ -368,6 +428,13 @@ export class NotebookLanguageServerClient implements ILanguageServerClient {
 
     // Pass merged doc to LSP
     try {
+      if (this.language === "r") {
+        const cellId = CellDocumentUri.parse(cellDocumentUri);
+        if (!this.isRCell(cellId)) {
+          return false;
+        }
+      }
+
       const result = await this.client.textDocumentDidOpen({
         textDocument: {
           languageId: params.textDocument.languageId,
@@ -443,6 +510,10 @@ export class NotebookLanguageServerClient implements ILanguageServerClient {
       contentChanges: [{ text: lens.mergedText }],
     };
 
+    if (this.language === "r" && lens.cellIds.length === 0) {
+      return { params, lens };
+    }
+
     if (didChange) {
       // Update changes for merged doc
       await this.client.textDocumentDidChange(params);
@@ -459,6 +530,7 @@ export class NotebookLanguageServerClient implements ILanguageServerClient {
     // But that is all we expect to receive
     if (params.contentChanges.length === 1) {
       await this.sync();
+      this.scheduleLintSave();
       return;
     }
 
@@ -486,6 +558,37 @@ export class NotebookLanguageServerClient implements ILanguageServerClient {
       "[lsp] willSaveWaitUntil edits are disabled for notebook documents",
     );
     return null;
+  }
+
+  /**
+   * Nudge save-triggered linters after an edit settles.
+   *
+   * Notebook cells are never saved as files, so nothing in marimo would
+   * otherwise emit `textDocument/didSave`. jarl — and linters like it —
+   * publish diagnostics on save and on nothing else, so without this they stay
+   * silent forever while you type. Debounced so a burst of keystrokes costs one
+   * lint pass, and confined to R because it exists for jarl; Python's servers
+   * all publish on change and gain nothing from it.
+   */
+  private scheduleLintSave(): void {
+    if (this.language !== "r") {
+      return;
+    }
+    if (this.lintSaveTimeout !== undefined) {
+      clearTimeout(this.lintSaveTimeout);
+    }
+    this.lintSaveTimeout = setTimeout(() => {
+      this.lintSaveTimeout = undefined;
+      const { lens } = this.snapshotter.snapshot();
+      this.client
+        .textDocumentDidSave({
+          textDocument: { uri: this.documentUri },
+          text: lens.mergedText,
+        })
+        .catch((error) => {
+          Logger.debug("[lsp] lint save notification failed", error);
+        });
+    }, NotebookLanguageServerClient.LINT_SAVE_DEBOUNCE_MS);
   }
 
   public async textDocumentDidSave(
@@ -753,11 +856,22 @@ export class NotebookLanguageServerClient implements ILanguageServerClient {
         continue;
       }
 
-      // Only update if it has changed
-      const code = getEditorCodeAsPython(ev);
-      if (code !== newCode) {
-        updateEditorCodeFromPython(ev, newCode);
-        updatedCount++;
+      // Only update if it has changed.
+      // For R cells, the lens contains raw R code (not Python-wrapped),
+      // so we compare against the raw editor text and update directly.
+      // For Python cells, we compare/update via the language adapter.
+      if (this.language === "r") {
+        const rawCode = ev.state.doc.toString();
+        if (rawCode !== newCode) {
+          replaceEditorContent(ev, newCode);
+          updatedCount++;
+        }
+      } else {
+        const code = getEditorCodeAsPython(ev);
+        if (code !== newCode) {
+          updateEditorCodeFromPython(ev, newCode);
+          updatedCount++;
+        }
       }
     }
 
@@ -846,11 +960,44 @@ export class NotebookLanguageServerClient implements ILanguageServerClient {
       return hover;
     }
 
-    // Change content kind to markdown and wrap in our classnames
+    // Normalize hover contents to MarkupContent with kind "markdown".
+    // LSPs return various formats: MarkupContent, plain strings, or arrays
+    // of MarkedStrings. We unify them so the downstream markdown renderer
+    // (marked) always processes the content, preserving formatting.
     if (typeof hover.contents === "object" && "kind" in hover.contents) {
+      hover.contents =
+        hover.contents.kind === "plaintext"
+          ? // Plaintext uses newlines/indentation for structure. Wrap in a
+            // code fence so the markdown parser preserves whitespace.
+            {
+              kind: "markdown",
+              value: `\`\`\`\n${hover.contents.value}\n\`\`\``,
+            }
+          : {
+              kind: "markdown",
+              value: hover.contents.value,
+            };
+    } else if (Array.isArray(hover.contents)) {
+      // MarkedString[] — returned by R languageserver and other LSPs.
+      // Each element is either a plain string (markdown) or
+      // { language, value } (a code block). Join into a single markdown
+      // document so the renderer handles it as one piece.
       hover.contents = {
         kind: "markdown",
-        value: hover.contents.value,
+        value: hover.contents
+          .map((item) =>
+            typeof item === "string"
+              ? item
+              : `\`\`\`${item.language}\n${item.value}\n\`\`\``,
+          )
+          .filter(Boolean)
+          .join("\n\n"),
+      };
+    } else if (typeof hover.contents === "string" && hover.contents !== "") {
+      // Deprecated plain string format — treat as markdown.
+      hover.contents = {
+        kind: "markdown",
+        value: hover.contents,
       };
     }
     hover.contents =

@@ -26,6 +26,7 @@ from marimo._runtime.commands import (
     ModelCommand,
     PreviewDatasetColumnCommand,
     PreviewSQLTableCommand,
+    ResetRSessionCommand,
     SetBreakpointsCommand,
     StorageDownloadCommand,
     StorageListEntriesCommand,
@@ -55,6 +56,11 @@ class ClearCacheRequest(ClearCacheCommand, tag=False):
 class GetCacheInfoRequest(GetCacheInfoCommand, tag=False):
     def as_command(self) -> GetCacheInfoCommand:
         return GetCacheInfoCommand()
+
+
+class ResetRSessionRequest(ResetRSessionCommand, tag=False):
+    def as_command(self) -> ResetRSessionCommand:
+        return ResetRSessionCommand()
 
 
 class DebugCellRequest(DebugCellCommand, tag=False):
@@ -240,6 +246,9 @@ class KernelStatusResponse(msgspec.Struct, rename="camel"):
 class FormatCellsRequest(msgspec.Struct, rename="camel"):
     codes: dict[CellId_t, str]
     line_length: int
+    # Language per cell (e.g. "python", "r"). If absent, defaults
+    # to Python for backward compatibility with existing clients.
+    languages: dict[CellId_t, str] = {}
 
 
 class FormatResponse(msgspec.Struct, rename="camel"):

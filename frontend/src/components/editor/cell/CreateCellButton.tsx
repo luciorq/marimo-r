@@ -20,7 +20,7 @@ import {
 import type { WebSocketState } from "@/core/websocket/types";
 import { cn } from "@/utils/cn";
 import { Tooltip } from "../../ui/tooltip";
-import { MarkdownIcon, PythonIcon } from "./code/icons";
+import { MarkdownIcon, PythonIcon, RIcon } from "./code/icons";
 
 export const CreateCellButton = ({
   connectionState,
@@ -71,6 +71,11 @@ export const CreateCellButton = ({
   const addSQLCell = () => {
     maybeAddMarimoImport({ autoInstantiate: true, createNewCell });
     onClick?.({ code: LanguageAdapters.sql.defaultCode });
+  };
+
+  const addRCell = () => {
+    maybeAddMarimoImport({ autoInstantiate: true, createNewCell });
+    onClick?.({ code: LanguageAdapters.r.defaultCode });
   };
 
   const addSetupCell = () => {
@@ -171,6 +176,9 @@ export const CreateCellButton = ({
         <DropdownMenuItem onClick={addSQLCell}>
           {renderIcon(<DatabaseIcon size={13} strokeWidth={1.5} />)}
           SQL cell
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={addRCell}>
+          {renderIcon(<RIcon />)}R cell
         </DropdownMenuItem>
         <DropdownMenuItem onClick={addSetupCell}>
           {renderIcon(<DiamondPlusIcon size={13} strokeWidth={1.5} />)}

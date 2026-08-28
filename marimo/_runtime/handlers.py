@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import os
+import signal
+import sys
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
@@ -69,6 +71,21 @@ def construct_interrupt_handler() -> Callable[[int, Any], None]:
 
         if sched is not None:
             sched.cancel_all()
+            # Send SIGINT to the R subprocess so it aborts the
+            # currently running computation.
+            if exec_ctx is not None and exec_ctx.r_process is not None:
+                try:
+                    r_proc = exec_ctx.r_process
+                    if r_proc.poll() is None:
+                        if sys.platform == "win32":
+                            r_proc.terminate()
+                        else:
+                            r_proc.send_signal(signal.SIGINT)
+                except Exception as e:
+                    LOGGER.warning(
+                        "Failed to interrupt R process: %s",
+                        e,
+                    )
         raise MarimoInterrupt
 
     return interrupt_handler

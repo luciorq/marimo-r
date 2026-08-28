@@ -190,7 +190,16 @@ export class RuntimeManager {
   /**
    * The URL of the copilot server.
    */
-  getLSPURL(lsp: "pylsp" | "basedpyright" | "copilot" | "ty" | "pyrefly"): URL {
+  getLSPURL(
+    lsp:
+      | "pylsp"
+      | "basedpyright"
+      | "copilot"
+      | "ty"
+      | "pyrefly"
+      | "r"
+      | "r_jarl",
+  ): URL {
     if (lsp === "copilot") {
       // For copilot, strip all query parameters except the auth token.
       // Copilot doesn't understand arbitrary query params, but we still

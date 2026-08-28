@@ -41,7 +41,7 @@ ${opts.codeAfter}
         code: codeWithReplacement,
         selectedText: opts.selection,
         includeOtherCode: "",
-        language: opts.language,
+        language: opts.language as AiCompletionRequest["language"],
       } satisfies AiCompletionRequest),
     },
   );

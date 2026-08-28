@@ -10,7 +10,7 @@ import { switchLanguage } from "@/core/codemirror/language/extension";
 import { LanguageAdapters } from "@/core/codemirror/language/LanguageAdapters";
 import type { LanguageAdapter } from "@/core/codemirror/language/types";
 import { Functions } from "@/utils/functions";
-import { MarkdownIcon, PythonIcon } from "./icons";
+import { MarkdownIcon, PythonIcon, RIcon } from "./icons";
 
 interface LanguageTogglesProps {
   editorView: EditorView | null;
@@ -39,6 +39,10 @@ export const LanguageToggles: React.FC<LanguageTogglesProps> = ({
     () => LanguageAdapters.sql.isSupported(code) || code.trim() === "",
     [code],
   );
+  const canUseR = useMemo(
+    () => LanguageAdapters.r.isSupported(code) || code.trim() === "",
+    [code],
+  );
 
   return (
     <div className={className}>
@@ -55,6 +59,15 @@ export const LanguageToggles: React.FC<LanguageTogglesProps> = ({
         }
         toType="sql"
         displayName="SQL"
+        onAfterToggle={onAfterToggle}
+      />
+      <LanguageToggle
+        editorView={editorView}
+        currentLanguageAdapter={currentLanguageAdapter}
+        canSwitchToLanguage={canUseR && currentLanguageAdapter === "python"}
+        icon={<RIcon className="w-4 h-4" />}
+        toType="r"
+        displayName="R"
         onAfterToggle={onAfterToggle}
       />
       <LanguageToggle

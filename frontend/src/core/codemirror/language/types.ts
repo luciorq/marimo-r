@@ -38,4 +38,4 @@ export interface LanguageAdapter<M = Record<string, any>> {
 export type LanguageMetadataOf<T extends LanguageAdapter> =
   T extends LanguageAdapter<infer M> ? M : never;
 
-export type LanguageAdapterType = "python" | "markdown" | "sql";
+export type LanguageAdapterType = "python" | "markdown" | "sql" | "r";

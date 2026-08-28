@@ -228,6 +228,44 @@ export const UserConfigSchema = z
       })
       .optional()
       .prefault({}),
+    language_servers: z
+      .looseObject({
+        pylsp: z
+          .object({
+            enabled: z.boolean().optional(),
+          })
+          .prefault({}),
+        basedpyright: z
+          .object({
+            enabled: z.boolean().optional(),
+          })
+          .prefault({}),
+        ty: z
+          .object({
+            enabled: z.boolean().optional(),
+          })
+          .prefault({}),
+        r: z
+          .object({
+            enabled: z.boolean().optional(),
+            // "air" is accepted for configs written before air stopped
+            // being a backend, and normalized away. Air still formats R
+            // cells; it just never served an LSP request marimo makes.
+            backend: z
+              .enum(["auto", "air", "languageserver"])
+              .optional()
+              .transform((backend) =>
+                backend === "air" ? "languageserver" : backend,
+              ),
+            // jarl is diagnostics-only, so it runs alongside the backend
+            // above rather than replacing it.
+            jarl: z
+              .object({enabled: z.boolean().prefault(false)})
+              .prefault({}),
+          })
+          .prefault({}),
+      })
+      .prefault(() => ({})),
     sharing: z
       .looseObject({
         html: z.boolean().optional(),
@@ -252,6 +290,7 @@ export const UserConfigSchema = z
     display: {},
     diagnostics: {},
     file_browser: {},
+    language_servers: {},
     experimental: {},
     server: {},
     ai: {},
