@@ -1,0 +1,199 @@
+schema_version: 1
+
+# Conda package for this fork. Build it with:
+#
+#   pixi run package            # wheel + conda package into build/conda
+#   pixi run publish            # upload to the private `universe` channel
+#
+# This is the *supported* artifact. R is not pip-installable, so a wheel alone
+# can never deliver a working install: marimo/_r/resources/r_backend.R needs R
+# with jsonlite and arrow, and formatting needs air. Those are conda packages,
+# and only a conda recipe can declare them.
+#
+# Requires rattler-build with --v3: the extras below are a v3 feature. See
+# FORK.md → Packaging.
+
+context:
+  # Tracks upstream's version exactly. Fork rebuilds of the same upstream
+  # release bump `build.number` below rather than the version — that is what
+  # conda build numbers are for, and it keeps this line identical to upstream's
+  # so it does not conflict on every rebase. A fork-only *source* change with no
+  # upstream release would be a PEP 440 post-release, e.g. 0.24.0.post1.
+  #
+  # Keep in sync with `version` in pyproject.toml; the CI packaging job asserts
+  # they match. Reading it directly needs rattler-build's --experimental
+  # load_from_file, and stacking two experimental flags is not worth it.
+  version: "0.24.0"
+  python_min: "3.10"
+
+package:
+  name: marimo-r
+  version: ${{ version }}
+
+source:
+  # A pre-built wheel rather than the source tree. The wheel must contain the
+  # built frontend (marimo/_static, marimo/_lsp — see MANIFEST.in), which comes
+  # from `make fe` and needs the node toolchain. Building that inside the recipe
+  # would drag node into the build environment for no benefit, so CI builds the
+  # wheel once and the recipe packages it.
+  #
+  # use_gitignore: false is required, not cosmetic: `dist/` is in .gitignore,
+  # and a path source honours gitignore by default — so the wheel is silently
+  # excluded and the build fails with an empty work directory.
+  - path: ../dist
+    use_gitignore: false
+  # Copied in so `license_file` below can find it: that path resolves against
+  # the work directory, which otherwise holds only the wheel.
+  - path: ../LICENSE
+
+build:
+  number: 0
+  # Deliberately *not* noarch. The sql extra must drop r-duckdb on
+  # linux-aarch64, where conda-forge has no build, and that is a build-time
+  # selector. v3's solve-time `when` cannot express it: rattler-build 0.73.0
+  # rejects both negation (`not __osx`) and CPU-arch matchspecs
+  # (`__archspec=1=aarch64`), so there is no way to say "anywhere but aarch64"
+  # at solve time. Revisit if the predicate grammar gains negation.
+  # A block scalar, not a list: list entries are executed without shell
+  # interpretation, so the wheel glob reaches pip unexpanded.
+  script: |
+    set -euo pipefail
+
+    # Exactly one wheel, or stop. `uv build` does not clean its output
+    # directory, so a stale wheel from a previous version lingers and a bare
+    # `ls ./*.whl` silently yields two paths in one string — which then fails
+    # deep inside python with a confusing FileNotFoundError. `pixi run wheel`
+    # cleans dist/ first; this is the backstop.
+    #
+    # Counted with `wc -l` rather than a bash array: this script is rendered as
+    # a Jinja template first, and bash's array-length expansion opens with a
+    # brace followed by a hash — which Jinja reads as a comment opener and
+    # rejects before the shell ever sees it. Avoid that sequence here, even
+    # inside a shell comment; Jinja scans the whole template.
+    count=$(ls -1 ./*.whl 2>/dev/null | wc -l)
+    if [ "$count" -ne 1 ]; then
+      echo "expected exactly one wheel, found $count:" >&2
+      ls -1 ./*.whl >&2 || true
+      echo "run 'pixi run wheel', which cleans dist/ before building" >&2
+      exit 1
+    fi
+    wheel=$(ls -1 ./*.whl)
+
+    python - "$wheel" "${{ version }}" <<'PY'
+    import sys, zipfile
+    wheel, expected = sys.argv[1], sys.argv[2]
+    names = zipfile.ZipFile(wheel).namelist()
+
+    # Packaging a wheel whose version differs from the recipe's would ship a
+    # mislabelled package — the exact hazard of building from a stale dist/.
+    dist_info = next(
+        (n.split("/")[0] for n in names if n.endswith(".dist-info/METADATA")), ""
+    )
+    built = dist_info.removesuffix(".dist-info").split("-")[-1]
+    if built != expected:
+        sys.exit(f"{wheel} is version {built}, but the recipe builds {expected}")
+
+    # The wheel must carry the built frontend. Without it marimo serves nothing
+    # and the R LSP silently never starts (get_command returns [] when
+    # marimo/_lsp/index.cjs is absent), so fail loudly here instead.
+    for required in ("marimo/_static/index.html", "marimo/_lsp/index.cjs"):
+        if not any(n.endswith(required) for n in names):
+            sys.exit(f"{wheel} is missing {required}; run `make fe` first")
+    PY
+
+    python -m pip install "$wheel" --no-deps --no-build-isolation -vv
+
+requirements:
+  host:
+    - python ${{ python_min }}.*
+    - pip
+  run:
+    - python >=${{ python_min }}
+    # marimo's own runtime dependencies, mirroring pyproject.toml.
+    - click >=8.0,<9
+    - jedi >=0.18.0,<0.20.0
+    - markdown >=3.6,<4
+    - pymdown-extensions >=10.21.2,<12
+    - pygments >=2.19,<3
+    - tomlkit >=0.12.0
+    - pyyaml >=6.0.1
+    - uvicorn >=0.22.0
+    - starlette >=0.37.2
+    - python-multipart >=0.0.18
+    - websockets >=14.2.0
+    - loro >=1.10.0
+    - docutils >=0.16.0
+    - psutil >=5.0
+    - itsdangerous >=2.0.0
+    - narwhals >=2.0.0
+    - packaging
+    - msgspec >=0.20.0
+    - pyzmq >=27.1.0
+    - anywidget >=0.9.21
+    - if: match(python, "<3.12")
+      then: typing_extensions >=4.4.0
+    # --- R, the reason this package exists -------------------------------
+    # r_backend.R does `library(jsonlite)` and `library(arrow)` at startup, so
+    # these are hard requirements, not extras.
+    - r-base >=4.4,<5
+    - r-jsonlite >=1.8
+    - r-arrow >=17
+    # R cells are formatted by _utils/formatter.py shelling out to `air format`.
+    # Not a language server here — see docs/development/r_support.md.
+    - air >=0.11
+  run_constraints:
+    # marimo-r installs the `marimo` import package, so the two cannot coexist
+    # in one prefix. conda can say so; PyPI cannot, which is part of why this
+    # is the supported artifact.
+    - marimo <0.0a0
+
+  # v3 optional dependency groups. These mirror the split already in
+  # `[tool.pixi.feature.r.dependencies]`: everything guarded by
+  # requireNamespace() in r_backend.R, or only needed by the LSP, is optional.
+  #   pixi add marimo-r --extras sql,lsp
+  extras:
+    sql:
+      - r-dbi >=1.2
+      # conda-forge has no r-duckdb for linux-aarch64. r_backend.R already
+      # guards DuckDB behind requireNamespace(), so dropping it here degrades
+      # gracefully rather than making the extra unsolvable on that platform.
+      - if: not (linux and aarch64)
+        then: r-duckdb >=1.1
+    plots:
+      - r-ggplot2 >=3.5
+    lsp:
+      # r-languageserver shells out to lintr and styler; without them it starts
+      # but reports no diagnostics and formats nothing.
+      - r-languageserver >=0.3.16
+      - r-lintr >=3.1
+      - r-styler >=1.10
+    lint:
+      # jarl runs as a second LSP server alongside the backend above.
+      - jarl >=0.5
+
+tests:
+  - python:
+      imports:
+        - marimo
+        - marimo._r
+      pip_check: false
+  - script:
+      - python -c "import marimo; assert callable(marimo.r)"
+      # The R toolchain is a hard dependency, so it must be present and marimo
+      # must resolve it from this prefix rather than from the user's PATH.
+      - python -c "from marimo._r.launcher import resolve_r_invocation; i = resolve_r_invocation(); assert i.isolated, i"
+      - Rscript --vanilla -e "stopifnot(requireNamespace('jsonlite'), requireNamespace('arrow'))"
+      - air --version
+
+about:
+  homepage: https://github.com/luciorq/marimo-r
+  summary: marimo notebooks with R language support
+  description: |
+    A fork of marimo that adds R cells, the marimo.r(...) API, R<->Python data
+    interchange over Arrow, and an R language server.
+
+    Optional extras: sql (DuckDB), plots (ggplot2), lsp (R language server),
+    lint (jarl).
+  license: Apache-2.0
+  license_file: LICENSE
+  repository: https://github.com/luciorq/marimo-r

@@ -136,3 +136,9 @@ site
 
 .agents/
 *skills*
+
+# Fork-specific: upstream ignores pixi.lock because pixi is only a dev
+# convenience there. This fork pins the R toolchain and R packages through pixi
+# (see FORK.md), and CI installs from the lockfile, so it must be tracked for
+# developers and CI to get the same R.
+!pixi.lock

@@ -3,7 +3,10 @@ requires = ["uv_build>=0.8.3,<0.13.0"]
 build-backend = "uv_build"
 
 [project]
-name = "marimo"
+# The distribution is `marimo-r`; the *import* name stays `marimo` (see
+# [tool.uv.build-backend] module-name below), so this is a drop-in
+# replacement that deliberately cannot be co-installed with upstream.
+name = "marimo-r"
 version = "0.24.0"
 description = "A library for making reactive notebooks and apps"
 # We try to keep dependencies to a minimum, to avoid conflicts with
@@ -56,6 +59,7 @@ dependencies = [
     "msgspec>=0.20.0",
     # for IPC, required for marimo edit --sandbox, marimo run <multiple notebooks>
     "pyzmq>=27.1.0; python_version < '3.15' and sys_platform != 'emscripten'",
+    "anywidget>=0.9.21",
 ]
 readme = "README.md"
 license = "Apache-2.0"
@@ -102,8 +106,8 @@ sandbox = [
 # List of deps that are recommended for most users
 # in order to unlock all features in marimo
 recommended = [
-    "marimo[sql]",
-    "marimo[sandbox]",                           # For `marimo edit --sandbox DIRECTORY`
+    "marimo-r[sql]",
+    "marimo-r[sandbox]",                           # For `marimo edit --sandbox DIRECTORY`
     "cryptography>=42.0.0",                      # Ed25519 signing of persistent cache manifests
     "altair>=5.4.0",                             # Plotting in datasource viewer
     "pydantic-ai-slim[openai]>=1.107.0,<3.0.0",  # AI features
@@ -265,6 +269,7 @@ typecheck = [
     "types-PyYAML>=6.0.12.20240808",
     "types-docutils>=0.21.0.20241128",
     "mcp>=1.0.0,<2",
+    "types-docutils",
     # zeromq
     "pyzmq>=27.1.0",
     "pyarrow-stubs",
@@ -535,6 +540,15 @@ exclude = [
 ]
 warn_unused_ignores = false
 
+# ibis ships no py.typed marker and has no stub package on PyPI (checked
+# through ibis-framework 12.0.0). Whether mypy reports `import-not-found` or
+# `import-untyped` for it depends on whether ibis happens to be installed in
+# the environment mypy runs in, so the inline `type: ignore[import-not-found]`
+# comments in marimo/ are only correct half the time. Settle it here instead.
+[[tool.mypy.overrides]]
+module = ["ibis.*"]
+ignore_missing_imports = true
+
 [tool.pytest.ini_options]
 minversion = "6.0"
 addopts = "-ra -q -v --ignore tests/_cli/fixtures --ignore tests/_ast/codegen_data --ignore tests/_ast/app_data"
@@ -616,15 +630,140 @@ reportUnusedCallResult = false
 [tool.pixi.workspace]
 channels = ["conda-forge"]
 platforms = ["osx-arm64", "linux-64", "linux-aarch64"]
+# Required by the [tool.pixi.package] section below. Note this is the third
+# preview/experimental gate in the packaging path, alongside rattler-build's
+# --v3 and the v3 repodata format itself — expect churn here before v3 settles.
+preview = ["pixi-build"]
+
+# Makes this workspace buildable as a conda package. The recipe is the source
+# of truth — `recipe/recipe.yaml` — because it needs v3 extras and a build-time
+# selector that the pixi manifest cannot express. `version` here is not read
+# from `[project]`, so it must track it; the CI packaging job asserts they match.
+[tool.pixi.package]
+name = "marimo-r"
+version = "0.24.0"
+
+[tool.pixi.package.build]
+backend = {name = "pixi-build-rattler-build", version = "*"}
 
 [tool.pixi.dependencies]
-nodejs = "22.*"
-pnpm = "10.*"
-make = ">=4.4.1,<5"
-pre_commit = ">=4.2.0,<5"
-uv = ">=0.6.12,<0.7"
-python = "3.12.*"
-pip = ">=25.0.1,<26"
+make = ">=4.4.1"
+pre_commit = ">=4.6.0"
+uv = ">=0.11.14"
+hatch = ">=1.16.5"
+# Builds the conda package; see the `package` task and recipe/recipe.yaml.
+rattler-build = ">=0.74"
+python = "3.13.*"
+pip = ">=25.0.1"
 
 [tool.pixi.pypi-dependencies]
-marimo = {path = ".", editable = true}
+marimo-r = {path = ".", editable = true}
+
+# The JS toolchain, in its own feature for the same reason as R below: the
+# frontend needs node and pnpm but no python, uv, or the editable marimo
+# install. Keeping it separable lets CI's frontend job install just this.
+#
+# It stays part of the default environment too, so `make dev` and `make fe`
+# behave as before, and the shared solve-group guarantees both environments
+# resolve to the same node.
+#
+# pnpm's version is effectively set by the `packageManager` field in
+# package.json, which pnpm honours by self-switching; this bound only needs to
+# be new enough to support that.
+[tool.pixi.feature.node.dependencies]
+nodejs = ">=24.14.1"
+pnpm = ">=10.33.1"
+
+# R toolchain and R package dependencies.
+#
+# This is a feature rather than a plain dependency block so that the R
+# environment can be built with `no-default-feature`: the R environment below
+# contains R and its packages and nothing else. It deliberately does not inherit
+# python, node, uv, or the editable marimo install, because marimo spawns R as a
+# subprocess — the two runtimes only need to agree on a file format (Arrow), not
+# share an environment. Keeping them apart also means `pixi install` for normal
+# Python work never has to solve or download the ~500MB R toolchain.
+[tool.pixi.feature.r.dependencies]
+r-base = ">=4.4,<5"
+# Required by marimo/_r/resources/r_backend.R.
+r-jsonlite = ">=1.8"
+r-arrow = ">=17"
+# Optional: enables registering Arrow inputs as DuckDB tables in R.
+r-dbi = ">=1.2"
+# Exercised by the plot-capture tests in tests/_r/test_session.py.
+r-ggplot2 = ">=3.5"
+
+# R language servers, all three backends marimo/_server/lsp.py can drive.
+# air and jarl are self-contained Rust binaries; r-languageserver is the R
+# package. lintr and styler are not optional extras — r-languageserver shells
+# out to them for diagnostics and formatting, and without them that backend
+# starts but reports nothing and formats nothing.
+air = ">=0.11"
+jarl = ">=0.5"
+r-languageserver = ">=0.3.16"
+r-lintr = ">=3.1"
+r-styler = ">=1.10"
+
+# r-duckdb has no linux-aarch64 build on conda-forge, and r_backend.R guards its
+# use behind requireNamespace(), so it is scoped to the platforms that have it
+# rather than dropped or allowed to fail the solve.
+[tool.pixi.feature.r.target.linux-64.dependencies]
+r-duckdb = ">=1.1"
+
+[tool.pixi.feature.r.target.osx-arm64.dependencies]
+r-duckdb = ">=1.1"
+
+[tool.pixi.feature.r.tasks]
+# A REPL in the same isolated library marimo will use.
+r-repl = "R --vanilla --quiet"
+r-version = "Rscript --vanilla -e 'cat(R.version.string, \"\\n\"); print(.libPaths())'"
+
+[tool.pixi.environments]
+default = {features = ["node"], solve-group = "default"}
+node = {features = ["node"], no-default-feature = true, solve-group = "default"}
+r = {features = ["r"], no-default-feature = true}
+
+[tool.pixi.tasks]
+# Tasks already run inside the environment, so they call tools directly rather
+# than nesting another `pixi run`.
+
+# --- building -------------------------------------------------------------
+# Kept separate from the launch tasks below on purpose: `make fe` takes about a
+# minute even when nothing changed, which is too slow to pay on every launch.
+# Build when you have changed code; launch as often as you like.
+build = {cmd = "make py && make fe", description = "Build the frontend and install marimo editable"}
+# The wheel must carry the built frontend (MANIFEST.in ships marimo/_static and
+# marimo/_lsp), so this depends on `build` rather than assuming it ran.
+wheel = {cmd = "rm -rf dist && uv build --wheel --out-dir dist", depends-on = ["build"], description = "Build the wheel, frontend assets included"}
+# The conda package is the supported artifact: R is not pip-installable, so a
+# wheel alone cannot deliver a working install. Needs --v3 for the extras in
+# recipe/recipe.yaml. Builds only — publishing is a deliberate manual step.
+package = {cmd = "rattler-build build --v3 --recipe recipe/recipe.yaml --output-dir build/conda", depends-on = ["wheel"], description = "Build the marimo-r conda package"}
+# Uploads to the `universe` channel at prefix.dev. Deliberately separate from
+# `package`, and never wired into a build: publishing is irreversible for a
+# given version+build number. Needs PREFIX_API_KEY, or a prior
+# `pixi auth login prefix.dev`.
+publish = {cmd = "rattler-build upload prefix --channel universe build/conda/*/*.conda", description = "Upload the built package to prefix.dev/universe"}
+dev = {cmd = "make dev", description = "Dev server with frontend hot-reloading (no build needed)"}
+
+# --- manual testing -------------------------------------------------------
+# Start here. Reports which R the cells will use, which R the language server
+# will use, and whether the editor will attach to it — the things that are
+# invisible from clicking around a notebook.
+r-doctor = {cmd = "python scripts/fork/r_doctor.py", description = "Preflight R and R LSP setup"}
+
+# `--extra=recommended` because the example notebooks use polars, duckdb, and
+# altair, which the editable install alone does not bring in.
+r-edit = {cmd = "uv run --extra=recommended marimo edit {{ notebook }}", args = [{arg = "notebook", default = "examples/r/marimo_r_example.py"}], description = "Edit an R notebook (default: the simple example)"}
+r-run = {cmd = "uv run --extra=recommended marimo run {{ notebook }}", args = [{arg = "notebook", default = "examples/r/marimo_r_example.py"}], description = "Run an R notebook as an app"}
+r-exec = {cmd = "uv run --extra=recommended python {{ notebook }}", args = [{arg = "notebook", default = "examples/r/marimo_r_example.py"}], description = "Execute an R notebook as a plain script"}
+r-check-examples = {cmd = "uv run --extra=recommended marimo check --fix examples/r/", description = "Lint and fix the R example notebooks"}
+
+# --- automated tests ------------------------------------------------------
+# test-optional, matching CI: with only the `test` group the pandas/polars/
+# pyarrow conversions importorskip away instead of running.
+test_r = {cmd = "uv run --group test-optional pytest tests/_r", description = "R tests against the pixi R"}
+test_r_frontend = {cmd = "pnpm --filter @marimo-team/frontend test src/core/codemirror/language/__tests__/r.test.ts src/core/codemirror/lsp/__tests__/notebook-lsp.test.ts", description = "R frontend tests"}
+# Should print only the pixi library path, even with R_LIBS_USER set.
+check_r_isolation = {cmd = "python -c \"import marimo; print(marimo.r('paste(.libPaths(), collapse=\\\"|\\\")', output=False, plot=False))\"", description = "Prove the R subprocess ignores a global R library"}
+
