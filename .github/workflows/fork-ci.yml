@@ -149,7 +149,9 @@ jobs:
   r-integration:
     name: R integration (pixi R)
     # Opt-in: costs installing the R toolchain on top of the smoke jobs.
-    if: ${{ (inputs.level || vars.FORK_CI || 'smoke') == 'full' }}
+    # Runs at `publish` too: a release must not ship without the R
+    # integration suite having run against the exact commit being published.
+    if: ${{ contains(fromJSON('["full","publish"]'), inputs.level || vars.FORK_CI || 'smoke') }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
