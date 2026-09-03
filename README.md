@@ -13,6 +13,20 @@
 > not interested in R support, so this is maintained separately; see
 > [FORK.md](FORK.md). Bug reports for anything other than R or pixi belong
 > upstream.
+>
+> **Install** (conda package, includes R, from the public
+> [`universe`](https://prefix.dev/channels/universe) channel):
+>
+> ```toml
+> # pixi.toml / pyproject.toml
+> [workspace]
+> channels = ["https://repo.prefix.dev/universe", "conda-forge"]
+> [dependencies]
+> marimo-r = {version = "*", extras = ["sql", "lsp"]}   # extras: sql, plots, lsp, lint
+> ```
+>
+> Requires a v3-aware resolver (pixi ≥ 0.71 or a recent conda). Linux x86-64
+> and Apple Silicon; `pip install` users must supply R and `air` themselves.
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/marimo-team/marimo/main/docs/_static/marimo-logotype-thick.svg">

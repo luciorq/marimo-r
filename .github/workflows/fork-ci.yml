@@ -2,9 +2,9 @@ name: 🧪 Fork CI
 
 # The only test workflow this fork runs. Upstream's test workflows are disabled
 # at the repository level (see scripts/fork/disable-upstream-workflows.sh):
-# their macOS and Windows matrices are far more CI spend than a private fork
-# needs. This one checks that the R patch series still works after a rebase,
-# on Linux only.
+# none of them test anything about R, and a wall of upstream jobs buries the
+# few that guard the fork. This one checks that the R patch series still works
+# after a rebase.
 #
 # Everything is behind the `FORK_CI` repository variable:
 #
@@ -189,13 +189,21 @@ jobs:
         run: pixi run uv run --group test-optional pytest -q tests/_r
 
   package:
-    name: Build the conda package
+    name: Build the conda package (${{ matrix.os }})
     # Opt-in only, and never on push: this builds the frontend and then a conda
     # package, which is far more work than the test jobs. At `package` it only
     # builds; uploading needs the explicit `publish` level.
+    #
+    # macos-latest is Apple Silicon, giving a native osx-arm64 build —
+    # cross-building from Linux fails at /usr/bin/codesign. linux-aarch64
+    # still needs an arm runner and is not built.
     if: ${{ contains(fromJSON('["package","publish"]'), inputs.level || vars.FORK_CI || 'smoke') }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
@@ -255,7 +263,7 @@ jobs:
       - name: Upload the package as a workflow artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: marimo-r-conda-${{ github.sha }}
+          name: marimo-r-conda-${{ matrix.os }}-${{ github.sha }}
           path: build/conda/*/*.conda
           if-no-files-found: error
 

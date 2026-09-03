@@ -167,9 +167,12 @@ cron jobs that would just make noise (`link-check.yml`, `sync-llm-info.yml`), an
 
 ### Why upstream's tests are off
 
-They are sized for upstream's budget, not a private fork's. This repo is
-private, so Actions minutes are billed, and macOS runners bill at **10x** while
-Windows bills at **2x**. Per push to `main`, upstream's suite costs roughly:
+They were disabled when this repo was private and every minute billed (macOS
+at 10x, Windows at 2x — upstream's suite was ~550 billed minutes per push).
+The repo is public now and standard-runner minutes are free, but the suite
+stays off for a better reason: none of it tests anything about R, and a wall
+of always-green upstream jobs buries the signal from the handful that guard
+the fork. For reference, what it would run per push:
 
 | Workflow | Shape | Approx. billed minutes |
 | --- | --- | --- |
@@ -194,7 +197,7 @@ anything about R that `fork-ci.yml` does not.
 | `FORK_CI` | What runs | Measured cost |
 | --- | --- | --- |
 | `off` | nothing | 0 |
-| `smoke` — the default, including when unset | Python R tests + LSP/formatter/interrupt tests + import smoke; frontend typecheck + R frontend tests | **~3 billed min** (2 Linux jobs) |
+| `smoke` — the fallback when the variable is unset | Python R tests + LSP/formatter/interrupt tests + import smoke; frontend typecheck + R frontend tests | **~3 billed min** (2 Linux jobs) |
 | `full` | the above plus the pixi R environment and the R integration tests | **~5 billed min** (3 Linux jobs) |
 | `package` | builds the conda package and uploads it as a workflow artifact — never publishes | dispatch-only; builds the frontend, so slower |
 | `publish` | the above, then uploads to prefix.dev/universe; needs `PREFIX_API_KEY` | dispatch-only |
@@ -216,9 +219,12 @@ Each job installs only the environment it needs — `node` for the frontend,
 `default` for Python, `default r` for R integration — so no job pays for a
 toolchain it does not use.
 
+The repository variable is set to **`full`**: standard-runner minutes are free
+on a public repo, so every push runs the R integration suite.
+
 ```bash
-gh variable set FORK_CI --body off  --repo luciorq/marimo-r   # kill all CI spend
-gh variable set FORK_CI --body full --repo luciorq/marimo-r   # R integration by default
+gh variable set FORK_CI --body off   --repo luciorq/marimo-r  # silence CI
+gh variable set FORK_CI --body smoke --repo luciorq/marimo-r  # cheapest useful level
 ```
 
 A `workflow_dispatch` run takes a `level` input that overrides the variable for
@@ -335,9 +341,8 @@ on `marimo-r` is respected as written.
 ### Publishing to prefix.dev
 
 The package goes to the **`universe`** channel at prefix.dev, which is
-**private** — it answers 401 rather than serving repodata, where a nonexistent
-channel would 404. Not conda-forge: this forks a package already in that
-channel, and staged-recipes review would gate every release.
+**public**. Not conda-forge: this forks a package already in that channel, and
+staged-recipes review would gate every release.
 
 ```bash
 pixi run package                       # build first
@@ -362,12 +367,7 @@ wired: build `hb0f4dca_1` was published by CI, with every step green including
 
 ### Installing it
 
-Because the channel is private, consumers authenticate first — the one-command
-install applies to people who have been granted access, not the public:
-
-```bash
-pixi auth login prefix.dev --token <token>
-```
+The channel is public — no authentication needed:
 
 ```toml
 [workspace]
@@ -391,11 +391,10 @@ channel into a clean workspace: the `sql` extra resolved `r-dbi` and
 `r-duckdb`, R resolved from the install prefix with `isolated: True`, and
 `marimo.r("sum(1:10)")` returned `55`.
 
-**osx-arm64 and linux-aarch64 are not published**, and cannot be built from a
-Linux machine: cross-building osx-arm64 fails linking `libffi` because it needs
-`/usr/bin/codesign`. They need native runners, which for macOS bills at 10x —
-so that is a deliberate cost decision rather than an oversight. Until then,
-those platforms install from git or the PyPI wheel.
+**linux-aarch64 is not published** — it needs a native arm runner.
+osx-arm64 builds on `macos-latest` in the package/publish matrix; macOS
+runners are free now that the repo is public, which is what unblocked it
+(cross-building from Linux fails at `/usr/bin/codesign`).
 
 ### Still to do
 
