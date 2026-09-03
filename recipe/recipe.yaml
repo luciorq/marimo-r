@@ -48,6 +48,14 @@ source:
 
 build:
   number: 0
+  # The wheel ships prebuilt node addons (marimo/_lsp/copilot/compiled/**,
+  # for several OS/arch combos). rattler-build's default macOS post-processing
+  # runs install_name_tool over them and fails — their Mach-O headers have no
+  # room for new load commands — and they are loaded by node at runtime, so
+  # conda rpath relocation is meaningless for them anyway. Scoped to osx to
+  # leave the already-published linux artifacts' processing unchanged.
+  dynamic_linking:
+    binary_relocation: ${{ false if osx else true }}
   # Deliberately *not* noarch. The sql extra must drop r-duckdb on
   # linux-aarch64, where conda-forge has no build, and that is a build-time
   # selector. v3's solve-time `when` cannot express it: rattler-build 0.73.0
