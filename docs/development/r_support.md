@@ -514,6 +514,14 @@ release model.
 
 ### Known conflict hotspots
 
+- **Generated snapshots (`tests/_server/templates/snapshots/`,
+  `tests/snapshots/api.txt`)** — both sides regenerate these: upstream when
+  config serialization changes, the fork because R config appears in the
+  dumps. Never text-merge them: take upstream's side (`git checkout --ours`
+  during a rebase), rerun `pytest tests/_server/templates` **twice** (first
+  run auto-updates, second verifies), and stage the result. Seen in the
+  0.24.2 sync.
+
 - **Upstream registries the fork must opt into — these produce no conflict
   markers.** The rebase onto 0.24.0 applied cleanly, and R cells worked, but
   clicking "Reset R session" raised

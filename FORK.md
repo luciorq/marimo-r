@@ -383,10 +383,16 @@ already-published version is fine, though: platforms are separate subdirs.
 
 #### Published so far
 
-`marimo-r 0.24.2` is the current release (linux-64 and osx-arm64, published
-by CI at `level=publish` with the R integration suite green against the
-released commit). `0.24.0` (linux-64) and `0.23.16.1` (pre-version-scheme)
-remain in the channel. Verified by installing it from the
+`marimo-r 0.24.0` (linux-64) is the newest package in the channel; `0.23.16.1`
+(pre-version-scheme) remains. **`0.24.2` is built and CI-green on both
+platforms but not yet uploaded**: the publish step fails 401 because the
+prefix.dev key was rotated without updating the `PREFIX_API_KEY` GitHub
+secret. To finish the release:
+
+```bash
+gh secret set PREFIX_API_KEY --repo luciorq/marimo-r   # paste the new key
+gh workflow run fork-ci.yml -f level=publish --repo luciorq/marimo-r
+``` Verified by installing it from the
 channel into a clean workspace: the `sql` extra resolved `r-dbi` and
 `r-duckdb`, R resolved from the install prefix with `isolated: True`, and
 `marimo.r("sum(1:10)")` returned `55`.
