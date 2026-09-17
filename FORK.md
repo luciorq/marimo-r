@@ -383,18 +383,15 @@ already-published version is fine, though: platforms are separate subdirs.
 
 #### Published so far
 
-`marimo-r 0.24.0` (linux-64) is the newest package in the channel; `0.23.16.1`
-(pre-version-scheme) remains. 0.24.0 was verified by installing it from the
-channel into a clean workspace: the `sql` extra resolved `r-dbi` and
-`r-duckdb`, R resolved from the install prefix with `isolated: True`, and
-`marimo.r("sum(1:10)")` returned `55`.
-
-**`0.24.2` is built and CI-green on both platforms but not yet uploaded.**
-Every publish attempt fails 401, including one on 2026-09-17 dispatched a
-minute after `PREFIX_API_KEY` was re-set, so the key itself is wrong or lacks
-access to `universe` — not merely stale. The two packages are kept as workflow
-artifacts until 2026-12-16; [STATUS.md](docs/development/STATUS.md) has the
-local-upload path that verifies the key and finishes the release in one step.
+`marimo-r 0.24.2` (linux-64 and osx-arm64, tag `v0.24.2`) is the newest
+package in the channel; `0.24.0` (linux-64) and `0.23.16.1`
+(pre-version-scheme) remain. 0.24.2 was built by CI (run 35169406641) and
+uploaded locally from the workflow artifacts on 2026-09-17 after the
+prefix.dev key was rotated; the `PREFIX_API_KEY` secret now holds the new key,
+so the CI `publish` level works again for the next release. 0.24.0 was
+verified by installing it from the channel into a clean workspace: the `sql`
+extra resolved `r-dbi` and `r-duckdb`, R resolved from the install prefix
+with `isolated: True`, and `marimo.r("sum(1:10)")` returned `55`.
 
 **linux-aarch64 is not published** — it needs a native arm runner.
 osx-arm64 builds on `macos-latest` in the package/publish matrix; macOS

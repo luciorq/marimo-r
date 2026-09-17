@@ -1,6 +1,6 @@
 # Fork status and session restart guide
 
-Last updated: 2026-09-16. This is the handoff document: current state, open
+Last updated: 2026-09-17. This is the handoff document: current state, open
 items with exact commands, and the restart prompt at the bottom. The durable
 references it leans on:
 
@@ -14,37 +14,25 @@ references it leans on:
 
 ## Current state
 
-- **Base**: upstream `0.24.2`, fully rebased, series is 6 clean commits
+- **Base**: upstream `0.24.2`, fully rebased, series is 8 clean commits
   (`git log --oneline 0.24.2..HEAD`). All gates green: `pixi run make check`,
   285+ backend tests, frontend R tests, `r-doctor`, CI at `FORK_CI=full`.
 - **Repo and channel are public.** CI default is `full` (free minutes);
   package/publish builds linux-64 + osx-arm64.
-- **Released**: `0.24.0` (linux-64) and `0.23.16.1` on
-  `https://repo.prefix.dev/universe`. Tag `v0.24.0` exists
-  (unsigned-annotated).
+- **Released**: `0.24.2` (linux-64 + osx-arm64, tag `v0.24.2`), `0.24.0`
+  (linux-64, tag `v0.24.0`) and `0.23.16.1` on
+  `https://repo.prefix.dev/universe`. Tags are unsigned-annotated. The
+  `PREFIX_API_KEY` secret and `~/.rattler/credentials.json` both hold the
+  key rotated on 2026-09-17, so CI `publish` and local `pixi run publish`
+  both work.
 
 ## Open items, in order
 
-1. **Finish the 0.24.2 release** — built and CI-green on both platforms
-   (run 35169406641). Uploading fails 401 *even after* `PREFIX_API_KEY` was
-   re-set on 2026-09-17, and the local `~/.rattler/credentials.json` token is
-   revoked too, so the fix is a key that actually works: create one on
-   prefix.dev with access to the `universe` channel (owner: `luciorq`), then
-   upload locally — a bad key fails 401 immediately, a good one publishes:
-   ```bash
-   # both packages are downloaded from the CI run (artifacts expire 2026-12-16)
-   PREFIX_API_KEY=… pixi run rattler-build upload prefix --channel universe \
-     build/conda/ci-0.24.2/*/linux-64/*.conda \
-     build/conda/ci-0.24.2/*/osx-arm64/*.conda
-   # if build/conda/ci-0.24.2 is gone:
-   #   gh run download 35169406641 --repo luciorq/marimo-r --dir build/conda/ci-0.24.2
-   ```
-   Once that key works, re-set the secret with it so CI publishing works again
-   (`gh secret set PREFIX_API_KEY --repo luciorq/marimo-r`). Then tag the
-   released commit
-   (`git tag -a v0.24.2 -m "marimo-r 0.24.2" && git push origin v0.24.2` —
-   GPG passphrase needed, or `-c tag.gpgsign=false` like v0.24.0) and update
-   FORK.md's "Published so far".
+1. **Nothing release-blocking.** Next release: bump `pyproject.toml` and
+   `recipe/recipe.yaml`, dispatch `fork-ci.yml -f level=publish`, tag with
+   `-c tag.gpgsign=false`, update FORK.md's "Published so far". If the key is
+   ever rotated again, `pixi auth login prefix.dev --token …` validates it
+   before `gh secret set PREFIX_API_KEY`.
 2. **conda-forge r-languageserver 0.3.19** — CRAN has it; conda-forge is on
    0.3.18. Pre-verified compatible over marimo's own wire (identical caps,
    completions, diagnostics), so take it when the feedstock bumps. No pin
