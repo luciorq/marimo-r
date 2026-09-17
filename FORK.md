@@ -384,18 +384,17 @@ already-published version is fine, though: platforms are separate subdirs.
 #### Published so far
 
 `marimo-r 0.24.0` (linux-64) is the newest package in the channel; `0.23.16.1`
-(pre-version-scheme) remains. **`0.24.2` is built and CI-green on both
-platforms but not yet uploaded**: the publish step fails 401 because the
-prefix.dev key was rotated without updating the `PREFIX_API_KEY` GitHub
-secret. To finish the release:
-
-```bash
-gh secret set PREFIX_API_KEY --repo luciorq/marimo-r   # paste the new key
-gh workflow run fork-ci.yml -f level=publish --repo luciorq/marimo-r
-``` Verified by installing it from the
+(pre-version-scheme) remains. 0.24.0 was verified by installing it from the
 channel into a clean workspace: the `sql` extra resolved `r-dbi` and
 `r-duckdb`, R resolved from the install prefix with `isolated: True`, and
 `marimo.r("sum(1:10)")` returned `55`.
+
+**`0.24.2` is built and CI-green on both platforms but not yet uploaded.**
+Every publish attempt fails 401, including one on 2026-09-17 dispatched a
+minute after `PREFIX_API_KEY` was re-set, so the key itself is wrong or lacks
+access to `universe` — not merely stale. The two packages are kept as workflow
+artifacts until 2026-12-16; [STATUS.md](docs/development/STATUS.md) has the
+local-upload path that verifies the key and finishes the release in one step.
 
 **linux-aarch64 is not published** — it needs a native arm runner.
 osx-arm64 builds on `macos-latest` in the package/publish matrix; macOS

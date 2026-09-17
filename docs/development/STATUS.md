@@ -14,7 +14,7 @@ references it leans on:
 
 ## Current state
 
-- **Base**: upstream `0.24.2`, fully rebased, series is 5 clean commits
+- **Base**: upstream `0.24.2`, fully rebased, series is 6 clean commits
   (`git log --oneline 0.24.2..HEAD`). All gates green: `pixi run make check`,
   285+ backend tests, frontend R tests, `r-doctor`, CI at `FORK_CI=full`.
 - **Repo and channel are public.** CI default is `full` (free minutes);
@@ -25,14 +25,23 @@ references it leans on:
 
 ## Open items, in order
 
-1. **Finish the 0.24.2 release** — built and CI-green on both platforms;
-   upload fails 401 because the prefix.dev key was rotated but the GitHub
-   secret was not updated:
+1. **Finish the 0.24.2 release** — built and CI-green on both platforms
+   (run 35169406641). Uploading fails 401 *even after* `PREFIX_API_KEY` was
+   re-set on 2026-09-17, and the local `~/.rattler/credentials.json` token is
+   revoked too, so the fix is a key that actually works: create one on
+   prefix.dev with access to the `universe` channel (owner: `luciorq`), then
+   upload locally — a bad key fails 401 immediately, a good one publishes:
    ```bash
-   gh secret set PREFIX_API_KEY --repo luciorq/marimo-r   # prompts on stdin
-   gh workflow run fork-ci.yml -f level=publish --repo luciorq/marimo-r
+   # both packages are downloaded from the CI run (artifacts expire 2026-12-16)
+   PREFIX_API_KEY=… pixi run rattler-build upload prefix --channel universe \
+     build/conda/ci-0.24.2/*/linux-64/*.conda \
+     build/conda/ci-0.24.2/*/osx-arm64/*.conda
+   # if build/conda/ci-0.24.2 is gone:
+   #   gh run download 35169406641 --repo luciorq/marimo-r --dir build/conda/ci-0.24.2
    ```
-   Then tag the released commit
+   Once that key works, re-set the secret with it so CI publishing works again
+   (`gh secret set PREFIX_API_KEY --repo luciorq/marimo-r`). Then tag the
+   released commit
    (`git tag -a v0.24.2 -m "marimo-r 0.24.2" && git push origin v0.24.2` —
    GPG passphrase needed, or `-c tag.gpgsign=false` like v0.24.0) and update
    FORK.md's "Published so far".
@@ -58,6 +67,9 @@ references it leans on:
 - **Verify empirically, not from docs**: air's "files only" comment was wrong
   (stdin works, `--stdin-file-path`); jarl publishes only on `didSave`;
   languageserver 0.3.19's "no breaking changes" checked over the real wire.
+- **A 401 that survives re-setting the secret is the key, not the secret.**
+  Verify a credential locally before wiring it into CI; prefix.dev keys can
+  be scoped to channels, and revoked keys fail the same way as absent ones.
 - **`assert` every scripted `str.replace`** during conflict resolution — one
   unasserted replace committed conflict markers mid-series in the 0.24.2 sync.
 - **Sync playbook**: `scripts/fork/sync-upstream.sh check|series|rebase`;
